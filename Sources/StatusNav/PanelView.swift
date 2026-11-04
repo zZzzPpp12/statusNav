@@ -12,14 +12,17 @@ struct PanelView: View {
     private var accent: Color { Color(red: 0.20, green: 0.55, blue: 0.46) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("StatusNav").font(.system(size: 21, weight: .bold, design: .rounded))
-                    Text("你的 Mac，一眼掌握").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text("StatusNav").font(.system(size: 17, weight: .semibold, design: .rounded))
+                    Text("系统状态，一眼掌握").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text("实时").font(.system(size: 10, weight: .medium))
+                HStack(spacing: 5) {
+                    Circle().fill(accent).frame(width: 5, height: 5)
+                    Text("实时").font(.system(size: 10, weight: .medium))
+                }
                     .padding(.horizontal, 9).padding(.vertical, 5)
                     .background(accent.opacity(0.12), in: Capsule()).foregroundStyle(accent)
             }
@@ -28,13 +31,14 @@ struct PanelView: View {
                 Divider().padding(.horizontal, 14)
                 networkSection
             }
-            .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
+            .modifier(PanelCard())
 
             audioSection
 
             if let error = audio.error {
                 HStack(alignment: .top) {
                     Text(error).font(.caption).foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer()
                     Button { audio.error = nil } label: { Image(systemName: "xmark.circle.fill") }
                         .buttonStyle(.plain).accessibilityLabel("关闭错误提示")
@@ -51,8 +55,9 @@ struct PanelView: View {
             }
             .font(.system(size: 11)).foregroundStyle(.secondary).buttonStyle(.plain)
         }
-        .padding(20)
+        .padding(18)
         .frame(width: 340)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var batterySection: some View {
@@ -61,11 +66,13 @@ struct PanelView: View {
                 badge(monitor.battery.charging ? "bolt.fill" : "battery.75percent", color: monitor.battery.isLow ? .orange : accent)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("电池").font(.system(size: 13, weight: .semibold))
-                    Text(monitor.battery.summary).font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text(monitor.battery.summary).font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
                 Text(monitor.battery.percentage.map { "\($0)%" } ?? "—")
-                    .font(.system(size: 23, weight: .medium, design: .rounded)).monospacedDigit()
+                    .font(.system(size: 25, weight: .medium, design: .rounded)).monospacedDigit()
+                    .fixedSize()
             }
             if monitor.battery.percentage != nil {
                 ProgressView(value: monitor.battery.progress).tint(monitor.battery.isLow ? .orange : accent)
@@ -78,7 +85,8 @@ struct PanelView: View {
             badge(monitor.network.symbol, color: .blue)
             VStack(alignment: .leading, spacing: 4) {
                 Text(monitor.network.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                Text(networkDetail).font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(networkDetail).font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
             Button { openSystemSettings("com.apple.wifi-settings") } label: {
@@ -117,22 +125,40 @@ struct PanelView: View {
             }
             if !audio.canSetVolume {
                 Text("此设备不支持系统音量调节，请使用设备自身控制。")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Picker(selection: Binding(get: { audio.deviceID }, set: { audio.selectDevice($0) })) {
                 if audio.devices.isEmpty { Text("无可用设备").tag(UInt32(0)) }
                 ForEach(audio.devices) { device in Text(device.name).tag(device.id) }
             } label: { Text("输出设备").font(.system(size: 11)) }
-            .controlSize(.small).disabled(audio.devices.isEmpty)
+            .pickerStyle(.menu)
+            .controlSize(.regular)
+            .frame(minHeight: 28)
+            .disabled(audio.devices.isEmpty)
         }
         .padding(14)
-        .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
+        .modifier(PanelCard())
     }
 
     private func badge(_ symbol: String, color: Color) -> some View {
         Image(systemName: symbol).font(.system(size: 15, weight: .medium))
             .foregroundStyle(color).frame(width: 34, height: 34)
             .background(color.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+private struct PanelCard: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .background(.white.opacity(colorScheme == .dark ? 0.055 : 0.24), in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(.white.opacity(colorScheme == .dark ? 0.07 : 0.38), lineWidth: 0.5)
+                    .allowsHitTesting(false)
+            }
     }
 }
 

@@ -7,6 +7,12 @@ enum StatusNavMain {
     @MainActor
     static func main() {
         let app = NSApplication.shared
+        if CommandLine.arguments.contains("--replace"), let bundleID = Bundle.main.bundleIdentifier {
+            for instance in NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+                where instance.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+                instance.terminate()
+            }
+        }
         let delegate = AppDelegate()
         app.delegate = delegate
         app.setActivationPolicy(.accessory)
@@ -19,7 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let monitor = SystemMonitor()
     private let settings = SettingsStore()
     private var statusItem: NSStatusItem!
-    private let popover = NSPopover()
+    private var statusPanel: StatusPanelController!
     private var preferencesWindow: NSWindow?
     private var subscriptions: Set<AnyCancellable> = []
     private var appearanceObservation: NSKeyValueObservation?
@@ -34,8 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Task { @MainActor in self?.render() }
             }
         }
-        popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: PanelView(
+        statusPanel = StatusPanelController(content: PanelView(
             monitor: monitor, audio: monitor.audio,
             openSettings: { [weak self] in self?.showPreferences() },
             quit: { NSApp.terminate(nil) }
@@ -50,14 +55,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         .store(in: &subscriptions)
         monitor.start()
         render()
+        if CommandLine.arguments.contains("--show-panel"), let button = statusItem.button {
+            statusPanel.show(relativeTo: button)
+        }
         if CommandLine.arguments.contains("--smoke-test") {
             print("StatusNav ready: battery=\(monitor.battery.percentage != nil), audioOutputs=\(monitor.audio.devices.count), statusIcon=\(statusItem.button?.image != nil)")
+            if let button = statusItem.button { statusPanel.show(relativeTo: button) }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-                if let index = CommandLine.arguments.firstIndex(of: "--preview-directory"),
-                   CommandLine.arguments.indices.contains(index + 1) {
-                    self?.exportPreviews(to: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true))
+                guard let self else { NSApp.terminate(nil); return }
+                self.statusPanel.refreshLayout()
+                print("Panel layout: \(self.statusPanel.layoutDescription)")
+                precondition(self.statusPanel.documentFits, "Panel document must retain its full content size")
+                let initialHeight = self.statusPanel.contentHeight
+                self.monitor.audio.error = String(repeating: "设备状态暂时不可用，请稍后重试。", count: 5)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    self.statusPanel.refreshLayout()
+                    precondition(self.statusPanel.documentFits, "Expanded error text must not be clipped")
+                    precondition(self.statusPanel.contentHeight > initialHeight, "Panel must grow with error text")
+                    print("Expanded panel: \(self.statusPanel.layoutDescription)")
+                    self.monitor.audio.error = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        self.statusPanel.refreshLayout()
+                        precondition(self.statusPanel.documentFits)
+                        self.statusPanel.close()
+                        precondition(!self.statusPanel.isShown)
+                        if let button = self.statusItem.button { self.statusPanel.show(relativeTo: button) }
+                        precondition(self.statusPanel.isShown)
+                        if let index = CommandLine.arguments.firstIndex(of: "--preview-directory"),
+                           CommandLine.arguments.indices.contains(index + 1) {
+                            self.exportPreviews(to: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true))
+                        }
+                        NSApp.terminate(nil)
+                    }
                 }
-                NSApp.terminate(nil)
             }
         }
     }
@@ -86,11 +116,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         monitor.stop()
+        statusPanel?.stop()
         appearanceObservation = nil
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        togglePopover()
+        toggleStatusPanel()
         return false
     }
 
@@ -115,11 +146,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 volume: monitor.audio.volume, muted: monitor.audio.muted,
                 size: 26, colorful: settings.colorful, dock: true)
         }
+        statusPanel?.refreshLayout()
     }
 
     @objc private func statusClicked() {
         if NSApp.currentEvent?.type == .rightMouseUp {
-            popover.performClose(nil)
+            statusPanel.close()
             let menu = NSMenu()
             let preferences = NSMenuItem(title: "偏好设置…", action: #selector(showPreferences), keyEquivalent: ",")
             preferences.target = self
@@ -129,19 +161,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             quit.target = NSApp
             menu.addItem(quit)
             if let button = statusItem.button { menu.popUp(positioning: nil, at: CGPoint(x: 0, y: button.bounds.height), in: button) }
-        } else { togglePopover() }
+        } else { toggleStatusPanel() }
     }
 
-    private func togglePopover() {
-        if popover.isShown { popover.performClose(nil); return }
+    private func toggleStatusPanel() {
+        if statusPanel.isShown { statusPanel.close(); return }
         guard let button = statusItem.button else { return }
         monitor.refresh()
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.makeKey()
+        statusPanel.show(relativeTo: button)
     }
 
     @objc private func showPreferences() {
-        popover.performClose(nil)
+        statusPanel.close()
         if preferencesWindow == nil {
             let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 420, height: 360),
                                   styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
