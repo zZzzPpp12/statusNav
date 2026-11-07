@@ -97,18 +97,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
                 let view = NSHostingView(rootView: PanelView(monitor: monitor, audio: monitor.audio,
-                    openSettings: {}, quit: {}).environment(\.colorScheme, scheme)
-                    .background(scheme == .dark ? Color(white: 0.12) : Color(white: 0.98)))
+                    openSettings: {}, quit: {}).environment(\.colorScheme, scheme))
                 view.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
                 view.setFrameSize(view.fittingSize)
                 view.layoutSubtreeIfNeeded()
                 guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
                 view.cacheDisplay(in: view.bounds, to: bitmap)
                 if let png = bitmap.representation(using: .png, properties: [:]) {
-                    try png.write(to: directory.appendingPathComponent("panel-\(name).png"))
+                    try png.write(to: directory.appendingPathComponent("panel-content-\(name).png"))
                 }
             }
-            print("Previews exported to \(directory.path)")
+            print("Content-only previews exported to \(directory.path); these exclude the live window backdrop")
         } catch {
             fputs("Preview export failed: \(error.localizedDescription)\n", stderr)
         }

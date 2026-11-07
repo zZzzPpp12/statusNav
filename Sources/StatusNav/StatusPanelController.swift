@@ -46,21 +46,22 @@ final class StatusPanelController {
 
         if #available(macOS 26.0, *) {
             let glass = NSGlassEffectView()
-            glass.style = .regular
-            glass.cornerRadius = 22
+            glass.style = .clear
+            glass.tintColor = nil
+            glass.cornerRadius = 14
             glass.contentView = scrollView
             panel.contentView = glass
         } else {
-            let blur = NSVisualEffectView()
-            blur.material = .popover
-            blur.blendingMode = .behindWindow
-            blur.state = .active
-            blur.wantsLayer = true
-            blur.layer?.cornerRadius = 22
-            blur.layer?.masksToBounds = true
+            let backdrop = NSVisualEffectView()
+            backdrop.material = .popover
+            backdrop.blendingMode = .behindWindow
+            backdrop.state = .active
+            backdrop.wantsLayer = true
+            backdrop.layer?.cornerRadius = 14
+            backdrop.layer?.masksToBounds = true
             scrollView.autoresizingMask = [.width, .height]
-            blur.addSubview(scrollView)
-            panel.contentView = blur
+            backdrop.addSubview(scrollView)
+            panel.contentView = backdrop
         }
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
@@ -110,7 +111,7 @@ final class StatusPanelController {
 
     var layoutDescription: String {
         let ideal = hostingView.fittingSize
-        return "window=\(Int(panel.frame.width))x\(Int(panel.frame.height)), content=\(Int(ideal.width))x\(Int(ideal.height)), scrollable=\(hostingView.frame.height > scrollView.contentSize.height + 1), transparent=\(!panel.isOpaque)"
+        return "window=\(Int(panel.frame.width))x\(Int(panel.frame.height)), content=\(Int(ideal.width))x\(Int(ideal.height)), scrollable=\(hostingView.frame.height > scrollView.contentSize.height + 1), transparentWindow=\(!panel.isOpaque), reduceTransparency=\(NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency), backdrop=\(String(describing: type(of: panel.contentView!)))"
     }
 
     var documentFits: Bool {
