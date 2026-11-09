@@ -7,6 +7,7 @@ struct PanelView: View {
     static let width: CGFloat = 336
     @ObservedObject var monitor: SystemMonitor
     @ObservedObject var audio: AudioController
+    @ObservedObject var settings: SettingsStore
     let openSettings: () -> Void
     let quit: () -> Void
     var expandedDetails = false
@@ -16,7 +17,8 @@ struct PanelView: View {
         VStack(alignment: .leading, spacing: 14) {
             BatterySectionView(monitor: monitor, initiallyExpanded: expandedDetails)
             Divider()
-            NetworkSectionView(monitor: monitor, initiallyExpanded: expandedDetails)
+            NetworkSectionView(monitor: monitor, showMenuRates: $settings.showNetworkRatesInMenuBar,
+                               initiallyExpanded: expandedDetails)
             Divider()
             if monitor.bluetoothEnabled {
                 BluetoothSectionView(monitor: monitor.bluetooth, initiallyExpanded: expandedDetails)

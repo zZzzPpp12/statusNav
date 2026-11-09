@@ -6,6 +6,7 @@ typedef struct {
     double systemWatts, inputWatts, displayWatts, batteryNetWatts;
     double outputWatts[4];
     uint32_t validMask;
+    uint32_t displayKey;
 } SNPowerMeters;
 /* Read-only, fixed sensor keys. Missing sensors leave their mask bit unset. */
 bool SNReadPowerMeters(SNPowerMeters *meters);

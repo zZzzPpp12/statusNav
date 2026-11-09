@@ -19,11 +19,16 @@ enum PowerReader {
                 result.internalDisplayActive = displays.prefix(Int(count)).contains { CGDisplayIsBuiltin($0) != 0 }
             }
         }
+        result.backlight = BacklightReader.read()
         var sensors = SNPowerMeters()
         if SNReadPowerMeters(&sensors) {
             if sensors.validMask & 1 != 0 { result.systemWatts = sensors.systemWatts }
             if sensors.validMask & 2 != 0 { result.inputWatts = sensors.inputWatts }
-            if sensors.validMask & 4 != 0 { result.displayWatts = sensors.displayWatts }
+            if sensors.validMask & 4 != 0 {
+                let key = sensors.displayKey
+                let name = String(decoding: [24, 16, 8, 0].map { UInt8(truncatingIfNeeded: key >> $0) }, as: UTF8.self)
+                result.backlight.applyPower(sensors.displayWatts, source: name, displayActive: result.internalDisplayActive)
+            }
             if sensors.validMask & 128 != 0, context.external || sensors.batteryNetWatts < 0 {
                 result.batteryNetWatts = sensors.batteryNetWatts
             }

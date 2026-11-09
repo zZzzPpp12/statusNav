@@ -130,9 +130,11 @@ struct BatterySectionView: View {
 
 struct NetworkSectionView: View {
     @ObservedObject var monitor: SystemMonitor
+    @Binding var showMenuRates: Bool
     @State private var expanded = false
-    init(monitor: SystemMonitor, initiallyExpanded: Bool = false) {
+    init(monitor: SystemMonitor, showMenuRates: Binding<Bool>, initiallyExpanded: Bool = false) {
         self.monitor = monitor
+        _showMenuRates = showMenuRates
         _expanded = State(initialValue: initiallyExpanded)
     }
 
@@ -153,6 +155,10 @@ struct NetworkSectionView: View {
                 }
             }
             if connected { NetworkTrafficView(telemetry: monitor.telemetry) }
+            Toggle("状态栏显示实时网速", isOn: $showMenuRates)
+                .toggleStyle(.switch).controlSize(.mini).font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .help("显示实际下载和上传速率；关闭面板后也会继续更新")
             if expanded {
                 VStack(spacing: 7) {
                     if let interface = network.interfaceName { PanelDetailRow("网络接口", interface) }

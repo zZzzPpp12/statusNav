@@ -88,10 +88,14 @@ bool SNReadPowerMeters(SNPowerMeters *meters) {
     if (scalar(connection, "PDTR", &value) && value >= 0 && value <= 1000) {
         meters->inputWatts = value; meters->validMask |= 2;
     }
-    bool displayRead = scalar(connection, "PDBR", &value);
-    if (!displayRead) displayRead = scalar(connection, "PBwo", &value);
-    if (displayRead && value >= 0 && value <= 150) {
-        meters->displayWatts = value; meters->validMask |= 4;
+    const char *displayKeys[] = {"PDBR", "PBwo", "PBLR"};
+    for (unsigned i = 0; i < sizeof(displayKeys) / sizeof(displayKeys[0]); ++i) {
+        if (!scalar(connection, displayKeys[i], &value) || value < 0 || value > 150) continue;
+        if (!(meters->validMask & 4) || value > 0) {
+            meters->displayWatts = value; meters->displayKey = code(displayKeys[i]);
+            meters->validMask |= 4;
+        }
+        if (value > 0) break;
     }
     for (int i = 0; i < 4; ++i) {
         char voltsKey[] = "D1JV", ampsKey[] = "D1JI";

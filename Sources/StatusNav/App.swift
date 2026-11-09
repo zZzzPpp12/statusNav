@@ -71,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         statusPanel = StatusPanelController(content: PanelView(
-            monitor: monitor, audio: monitor.audio,
+            monitor: monitor, audio: monitor.audio, settings: settings,
             openSettings: { [weak self] in self?.showPreferences() },
             quit: { NSApp.terminate(nil) },
             expandedDetails: CommandLine.arguments.contains("--preview-details")
@@ -111,6 +111,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         monitor.stop(preserveReadings: true)
         print("Telemetry: Bluetooth devices=\(monitor.bluetooth.snapshot.devices.count), systemPower=\(monitor.telemetry.power.systemWatts != nil), displayPower=\(monitor.telemetry.power.displayWatts != nil), portChannels=\(monitor.telemetry.power.portWatts.count), batteryPower=\(monitor.telemetry.power.batteryNetWatts != nil), apps=\(monitor.telemetry.applications.count), traffic=\(monitor.telemetry.rates != nil)")
+        let backlight = monitor.telemetry.power.backlight
+        print("Backlight: source=\(backlight.powerSource ?? "none"), rejectedZero=\(backlight.rejectedZero), brightness=\(backlight.brightnessPercent.map { String(format: "%.0f%%", $0) } ?? "unknown"), nits=\(backlight.brightnessNits.map { String(format: "%.1f", $0) } ?? "unknown"), driveMilliamps=\(backlight.driveMilliamps.map { String(format: "%.3f", $0) } ?? "unknown")")
         statusPanel.refreshLayout()
         await waitForPanelLayout { self.statusPanel.documentFits }
         precondition(statusPanel.isShown, "The panel must remain visible during the layout check")
@@ -179,7 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 for (layout, expanded) in [("summary", false), ("details", true)] {
                     for (surface, background) in [("content", Color.clear),
                         ("layout", scheme == .dark ? Color(white: 0.13) : Color(white: 0.98))] {
-                        let view = NSHostingView(rootView: PanelView(monitor: monitor, audio: monitor.audio,
+                        let view = NSHostingView(rootView: PanelView(monitor: monitor, audio: monitor.audio, settings: settings,
                             openSettings: {}, quit: {}, expandedDetails: expanded)
                             .environment(\.colorScheme, scheme).background(background))
                         view.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)

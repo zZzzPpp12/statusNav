@@ -23,8 +23,21 @@ struct PowerFlowSectionView: View {
             }
             VStack(spacing: 7) {
                 if let active = power.internalDisplayActive { PanelDetailRow("内置屏状态", active ? "已激活" : "未激活") }
-                PanelDetailRow("内置屏背光", PowerSnapshot.wattsText(power.displayWatts))
-                    .help("仅背光传感器，不代表整个显示系统功耗")
+                PanelDetailRow("内置屏背光功率", power.backlight.rejectedZero ? "读数不一致" : PowerSnapshot.wattsText(power.displayWatts))
+                    .help("仅背光传感器，不代表整个显示系统功耗" + (power.backlight.powerSource.map { " · " + $0 } ?? ""))
+                if let brightness = power.backlight.brightnessPercent {
+                    PanelDetailRow("内屏亮度设置", String(format: "%.0f%%", brightness))
+                }
+                if let nits = power.backlight.brightnessNits {
+                    PanelDetailRow("背光亮度（报告）", String(format: "%.1f nit", nits))
+                }
+                if let current = power.backlight.driveMilliamps {
+                    PanelDetailRow("背光驱动电流（报告）", String(format: "%.2f mA", current))
+                }
+                if power.backlight.rejectedZero {
+                    Text("显示驱动报告亮度，但功率通道返回 0 W，暂不采用该值。亮度和驱动电流不能直接换算为屏幕功耗。")
+                        .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
                 if power.portWatts.isEmpty {
                     PanelDetailRow("USB / Type-C 输出", "硬件未提供读数")
                 } else {

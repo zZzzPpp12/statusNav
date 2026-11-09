@@ -42,7 +42,8 @@ public struct PowerSnapshot: Equatable, Sendable {
     public var inputWatts: Double?
     /// Positive means energy flowing into the battery; negative means discharge.
     public var batteryNetWatts: Double?
-    public var displayWatts: Double?
+    public var backlight = BacklightSnapshot()
+    public var displayWatts: Double? { backlight.watts }
     public var internalDisplayActive: Bool?
     public var portWatts: [Int: Double] = [:]
     public var systemSource = "硬件传感器"
