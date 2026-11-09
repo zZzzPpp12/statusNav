@@ -26,6 +26,7 @@ final class StatusPanelController {
     private var measuredContentSize: CGSize?
 
     var isShown: Bool { panel.isVisible }
+    var visibilityDidChange: ((Bool) -> Void)?
 
     init(content: PanelView, automaticDismissal: Bool = true, maximumViewportHeight: CGFloat? = nil) {
         self.automaticDismissal = automaticDismissal
@@ -81,6 +82,7 @@ final class StatusPanelController {
         anchorButton = button
         refreshLayout(force: true)
         panel.makeKeyAndOrderFront(nil)
+        visibilityDidChange?(true)
         // Start at the header every time, including after a previously scrolled small display.
         let top = hostingView.isFlipped ? 0 : max(0, hostingView.frame.height - scrollView.contentSize.height)
         scrollView.contentView.scroll(to: CGPoint(x: 0, y: top))
@@ -89,11 +91,13 @@ final class StatusPanelController {
     }
 
     func close() {
+        let wasVisible = isShown
         panel.orderOut(nil)
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }
         if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
         localMonitor = nil
         globalMonitor = nil
+        if wasVisible { visibilityDidChange?(false) }
     }
 
     func stop() {
@@ -113,12 +117,13 @@ final class StatusPanelController {
         var viewportSize = contentSize
         if let maximumViewportHeight { viewportSize.height = min(viewportSize.height, max(1, maximumViewportHeight)) }
         let frame = PanelPlacement.frame(anchor: anchor, contentSize: viewportSize, visibleFrame: visibleFrame)
-        panel.setFrame(frame, display: true)
+        let frameChanged = panel.frame != frame
+        if frameChanged { panel.setFrame(frame, display: true) }
         surfaceView.needsLayout = true
         surfaceView.layoutSubtreeIfNeeded()
         // Keep the document's natural height. If the display is too short, scroll rather than crop.
         hostingView.setFrameSize(CGSize(width: frame.width, height: contentSize.height))
-        panel.invalidateShadow()
+        if frameChanged { panel.invalidateShadow() }
     }
 
     var layoutDescription: String {

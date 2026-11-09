@@ -7,8 +7,10 @@ let package = Package(
     products: [.executable(name: "StatusNav", targets: ["StatusNav"])],
     targets: [
         .target(name: "StatusNavCore"),
-        .executableTarget(name: "StatusNav", dependencies: ["StatusNavCore"]),
-        .testTarget(name: "StatusNavCoreTests", dependencies: ["StatusNavCore"])
+        .target(name: "HardwareTelemetry", publicHeadersPath: "include",
+                linkerSettings: [.linkedFramework("IOKit"), .linkedFramework("CoreFoundation")]),
+        .executableTarget(name: "StatusNav", dependencies: ["StatusNavCore", "HardwareTelemetry"]),
+        .testTarget(name: "StatusNavCoreTests", dependencies: ["StatusNavCore", "HardwareTelemetry"])
     ],
     swiftLanguageModes: [.v6]
 )

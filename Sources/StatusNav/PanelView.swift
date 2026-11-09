@@ -18,6 +18,10 @@ struct PanelView: View {
             Divider()
             NetworkSectionView(monitor: monitor, initiallyExpanded: expandedDetails)
             Divider()
+            if monitor.bluetoothEnabled {
+                BluetoothSectionView(monitor: monitor.bluetooth, initiallyExpanded: expandedDetails)
+                Divider()
+            }
             AudioSectionView(output: audio, input: monitor.inputAudio, initiallyExpanded: expandedDetails)
 
             if let error = audio.error {
@@ -42,7 +46,7 @@ struct PanelView: View {
                 Button("设置…", action: openSettings)
                     .frame(minHeight: 24)
                 Spacer()
-                Button { monitor.refresh() } label: {
+                Button { monitor.refresh(); monitor.bluetooth.refresh(); monitor.telemetry.reset() } label: {
                     Image(systemName: "arrow.clockwise").frame(width: 24, height: 24)
                 }
                 .help("刷新状态").accessibilityLabel("刷新状态")
@@ -92,6 +96,18 @@ struct PreferencesView: View {
                 Toggle("使用状态颜色", isOn: $settings.colorful)
                 Stepper("图标大小：\(Int(settings.iconSize))", value: $settings.iconSize, in: 22...32, step: 2)
             }
+            Section("状态栏读数") {
+                Toggle("显示电池净功率", isOn: $settings.showBatteryPowerInMenuBar)
+                Toggle("显示网络上下行速率", isOn: $settings.showNetworkRatesInMenuBar)
+                Text("功率区分充入与放出；网络为实际流量，约每 2 秒更新。两项可分别关闭。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("面板内容") {
+                Toggle("显示蓝牙设备", isOn: $settings.showBluetoothPanel)
+                Toggle("显示应用 CPU 活动与能耗", isOn: $settings.showApplicationActivity)
+                Text("应用仅在电池详情打开时采样；CPU 能耗不代表整应用功耗。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("显示位置") {
                 Toggle("同时在 Dock 显示实时图标", isOn: $settings.showDock)
             }
@@ -105,6 +121,6 @@ struct PreferencesView: View {
         }
         .formStyle(.grouped)
         .padding(8)
-        .frame(width: 420, height: 360)
+        .frame(width: 440, height: 500)
     }
 }

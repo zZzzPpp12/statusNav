@@ -114,6 +114,8 @@ struct BatterySectionView: View {
                     PanelDetailRow("低电量模式", details.lowPowerMode ? "已开启" : "已关闭")
                 }
                 .padding(.top, 3)
+                Divider().opacity(0.6)
+                PowerFlowSectionView(monitor: monitor)
             }
         }
     }
@@ -150,6 +152,7 @@ struct NetworkSectionView: View {
                     }
                 }
             }
+            if connected { NetworkTrafficView(telemetry: monitor.telemetry) }
             if expanded {
                 VStack(spacing: 7) {
                     if let interface = network.interfaceName { PanelDetailRow("网络接口", interface) }
@@ -198,5 +201,22 @@ struct NetworkSectionView: View {
 
     private var settingsPane: String {
         network.kind == .wifi || network.kind == .offline ? "com.apple.wifi-settings" : "com.apple.Network-Settings.extension"
+    }
+}
+
+private struct NetworkTrafficView: View {
+    @ObservedObject var telemetry: TelemetryMonitor
+    private var rateLabel: String {
+        let down = telemetry.rates.map { TrafficRates.text($0.download) } ?? "—"
+        let up = telemetry.rates.map { TrafficRates.text($0.upload) } ?? "—"
+        return "↓" + down + "   ↑" + up
+    }
+    var body: some View {
+        HStack {
+            Text("实时流量").foregroundStyle(.secondary)
+            Spacer()
+            Text(rateLabel)
+                .monospacedDigit()
+        }.font(.system(size: 11)).accessibilityElement(children: .combine)
     }
 }

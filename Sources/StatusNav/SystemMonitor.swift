@@ -10,6 +10,15 @@ import StatusNavCore
 final class SystemMonitor: ObservableObject {
     @Published private(set) var battery = BatteryState()
     @Published private(set) var network = NetworkState()
+    let bluetooth = BluetoothMonitor()
+    let telemetry = TelemetryMonitor()
+    @Published private(set) var bluetoothEnabled = true
+    @Published private(set) var appActivityEnabled = true
+    private var started = false
+    private var panelVisible = false
+    private var powerDetailsVisible = false
+    private var menuPower = false
+    private var menuRates = false
     let audio = AudioController()
     let inputAudio = AudioController(direction: .input)
     private let pathMonitor = NWPathMonitor()
@@ -22,6 +31,7 @@ final class SystemMonitor: ObservableObject {
     private var observers: [NSObjectProtocol] = []
 
     func start() {
+        started = true
         refresh()
         pathMonitor.pathUpdateHandler = { [weak self] path in
             let kind: ConnectionKind = path.status != .satisfied ? .offline
@@ -60,12 +70,16 @@ final class SystemMonitor: ObservableObject {
         }
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
-        ) { [weak self] _ in Task { @MainActor in self?.refresh() } })
+        ) { [weak self] _ in Task { @MainActor in self?.telemetry.reset(); self?.bluetooth.invalidate(); self?.refresh() } })
         audio.start()
         inputAudio.start()
+        updateSamplingPolicy()
     }
 
-    func stop() {
+    func stop(preserveReadings: Bool = false) {
+        started = false
+        bluetooth.stop()
+        telemetry.stop(preserveReadings: preserveReadings)
         timer?.invalidate()
         timer = nil
         pathMonitor.cancel()
@@ -75,6 +89,31 @@ final class SystemMonitor: ObservableObject {
         observers.removeAll()
         audio.stop()
         inputAudio.stop()
+    }
+
+    func configure(settings: SettingsStore) {
+        if bluetoothEnabled != settings.showBluetoothPanel { bluetoothEnabled = settings.showBluetoothPanel }
+        if appActivityEnabled != settings.showApplicationActivity { appActivityEnabled = settings.showApplicationActivity }
+        menuPower = settings.showBatteryPowerInMenuBar
+        menuRates = settings.showNetworkRatesInMenuBar
+        updateSamplingPolicy()
+    }
+
+    func setPanelVisible(_ shown: Bool) {
+        guard panelVisible != shown else { return }
+        panelVisible = shown
+        updateSamplingPolicy()
+    }
+    func setPowerDetailsVisible(_ shown: Bool) {
+        guard powerDetailsVisible != shown else { return }
+        powerDetailsVisible = shown
+        updateSamplingPolicy()
+    }
+    private func updateSamplingPolicy() {
+        bluetooth.setActive(started && panelVisible && bluetoothEnabled)
+        telemetry.configure(power: started && (panelVisible || menuPower),
+                            rates: started && (panelVisible || menuRates),
+                            applications: started && panelVisible && powerDetailsVisible && appActivityEnabled)
     }
 
     func refresh() {
@@ -106,6 +145,8 @@ final class SystemMonitor: ObservableObject {
                 fullyCharged: info[kIOPSIsChargedKey] as? Bool ?? false
             )
             battery.details = BatteryDetailsReader.read(source: info, externalPower: battery.externalPower)
+            telemetry.update(interface: network.interfaceName,
+                             context: BatteryPowerContext(external: battery.externalPower, charging: battery.charging))
             return
         }
         battery = BatteryState()
@@ -174,5 +215,7 @@ final class SystemMonitor: ObservableObject {
             }
         }
         network = next
+        telemetry.update(interface: next.interfaceName,
+                         context: BatteryPowerContext(external: battery.externalPower, charging: battery.charging))
     }
 }

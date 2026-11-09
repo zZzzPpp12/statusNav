@@ -1,11 +1,18 @@
 import AppKit
 import Combine
 import SwiftUI
+import StatusNavCore
 
 @main
 enum StatusNavMain {
     @MainActor
     static func main() {
+        if CommandLine.arguments.contains("--smoke-test"), CommandLine.arguments.contains("--preview-readouts") {
+            var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+            arguments["showBatteryPowerInMenuBar"] = true
+            arguments["showNetworkRatesInMenuBar"] = true
+            UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+        }
         let app = NSApplication.shared
         if CommandLine.arguments.contains("--replace"), let bundleID = Bundle.main.bundleIdentifier {
             for instance in NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
@@ -29,6 +36,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var preferencesWindow: NSWindow?
     private var subscriptions: Set<AnyCancellable> = []
     private var appearanceObservation: NSKeyValueObservation?
+    private var lastIconState: IconState?
+    private var dockIconVisible = false
+    private var renderCount = 0
+
+    private struct IconState: Equatable {
+        let percentage: Int?
+        let charging: Bool
+        let low: Bool
+        let networkSymbol: String
+        let volumeDots: Int
+        let size: Double
+        let colorful: Bool
+        let appearance: NSAppearance.Name?
+    }
+
+    private func appearanceMatch(_ button: NSButton) -> NSAppearance.Name? {
+        button.effectiveAppearance.bestMatch(from: [.accessibilityHighContrastDarkAqua,
+            .accessibilityHighContrastAqua, .darkAqua, .aqua])
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -37,7 +63,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.action = #selector(statusClicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             appearanceObservation = button.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
-                Task { @MainActor in self?.render() }
+                Task { @MainActor in
+                    guard let self, let button = self.statusItem?.button,
+                          self.lastIconState?.appearance != self.appearanceMatch(button) else { return }
+                    self.render()
+                }
             }
         }
         statusPanel = StatusPanelController(content: PanelView(
@@ -48,10 +78,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ), automaticDismissal: !CommandLine.arguments.contains("--smoke-test"),
            maximumViewportHeight: CommandLine.arguments.contains("--smoke-test")
                && CommandLine.arguments.contains("--preview-short") ? 400 : nil)
+        statusPanel.visibilityDidChange = { [weak self] in self?.monitor.setPanelVisible($0) }
+        monitor.configure(settings: settings)
         Publishers.MergeMany([
             monitor.objectWillChange.eraseToAnyPublisher(),
             monitor.audio.objectWillChange.eraseToAnyPublisher(),
             monitor.inputAudio.objectWillChange.eraseToAnyPublisher(),
+            monitor.telemetry.objectWillChange.eraseToAnyPublisher(),
+            monitor.bluetooth.objectWillChange.eraseToAnyPublisher(),
             settings.objectWillChange.eraseToAnyPublisher()
         ])
         .debounce(for: .milliseconds(40), scheduler: RunLoop.main)
@@ -70,15 +104,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func runSmokeTest() async {
-        try? await Task.sleep(for: .seconds(2))
+        try? await Task.sleep(for: .seconds(6))
+        for _ in 0..<80 {
+            if !monitor.bluetooth.loading { break }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        monitor.stop(preserveReadings: true)
+        print("Telemetry: Bluetooth devices=\(monitor.bluetooth.snapshot.devices.count), systemPower=\(monitor.telemetry.power.systemWatts != nil), displayPower=\(monitor.telemetry.power.displayWatts != nil), portChannels=\(monitor.telemetry.power.portWatts.count), batteryPower=\(monitor.telemetry.power.batteryNetWatts != nil), apps=\(monitor.telemetry.applications.count), traffic=\(monitor.telemetry.rates != nil)")
         statusPanel.refreshLayout()
         await waitForPanelLayout { self.statusPanel.documentFits }
         precondition(statusPanel.isShown, "The panel must remain visible during the layout check")
+        render()
+        let title = statusItem.button?.title ?? ""
+        print("Menu readouts: power=\(settings.showBatteryPowerInMenuBar), traffic=\(settings.showNetworkRatesInMenuBar), title=\(title)")
+        if CommandLine.arguments.contains("--preview-readouts") {
+            precondition(title.contains("W") && title.contains("↓"), "Enabled readouts must reach the native status item")
+        }
         print("Panel layout: \(statusPanel.layoutDescription)")
         if CommandLine.arguments.contains("--preview-short") {
             precondition(statusPanel.frame.height <= 400, "The short viewport must stay bounded")
             precondition(statusPanel.contentHeight > statusPanel.frame.height, "Long content must be scrollable")
         }
+        let rendersBeforeIdle = renderCount
+        try? await Task.sleep(for: .milliseconds(400))
+        precondition(renderCount - rendersBeforeIdle <= 3, "Paused sampling must not cause an appearance redraw loop")
+        print("Idle redraw check passed: \(renderCount - rendersBeforeIdle) renders")
         let initialHeight = statusPanel.contentHeight
         let initialFrame = statusPanel.frame
 
@@ -161,26 +211,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func render() {
+        renderCount += 1
+        monitor.configure(settings: settings)
         guard let button = statusItem?.button else { return }
-        button.effectiveAppearance.performAsCurrentDrawingAppearance {
-            button.image = IconRenderer.image(battery: monitor.battery, network: monitor.network,
-                volume: monitor.audio.volume, muted: monitor.audio.muted,
-                size: settings.iconSize, colorful: settings.colorful)
+        let iconState = IconState(percentage: monitor.battery.percentage, charging: monitor.battery.charging,
+            low: monitor.battery.isLow, networkSymbol: monitor.network.symbol,
+            volumeDots: VolumeScale.activeDots(volume: monitor.audio.volume, muted: monitor.audio.muted),
+            size: settings.iconSize, colorful: settings.colorful, appearance: appearanceMatch(button))
+        let iconChanged = iconState != lastIconState
+        if iconChanged {
+            lastIconState = iconState
+            button.effectiveAppearance.performAsCurrentDrawingAppearance {
+                button.image = IconRenderer.image(battery: monitor.battery, network: monitor.network,
+                    volume: monitor.audio.volume, muted: monitor.audio.muted,
+                    size: settings.iconSize, colorful: settings.colorful)
+            }
         }
         button.imagePosition = .imageLeading
         button.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
-        button.title = settings.showPercentage ? monitor.battery.percentage.map { " \($0)%" } ?? "" : ""
+        let title = MenuReadout.text(percentage: monitor.battery.percentage, showPercentage: settings.showPercentage,
+            batteryNetWatts: monitor.telemetry.power.batteryNetWatts, showPower: settings.showBatteryPowerInMenuBar,
+            rates: monitor.telemetry.rates, showRates: settings.showNetworkRatesInMenuBar)
+        if button.title != title { button.title = title }
         let batteryText = monitor.battery.percentage.map { "电量 \($0)%" } ?? "无内置电池"
+        let readouts = MenuReadout.text(percentage: nil, showPercentage: false,
+            batteryNetWatts: monitor.telemetry.power.batteryNetWatts, showPower: settings.showBatteryPowerInMenuBar,
+            rates: monitor.telemetry.rates, showRates: settings.showNetworkRatesInMenuBar)
         let description = "StatusNav · \(batteryText) · \(monitor.network.title) · \(monitor.audio.muted ? "已静音" : "音量 \(Int(monitor.audio.volume * 100))%")"
-        button.toolTip = description
-        button.setAccessibilityLabel(description)
+        button.toolTip = description + readouts
+        button.setAccessibilityLabel(description + readouts)
         let desired: NSApplication.ActivationPolicy = settings.showDock ? .regular : .accessory
         if NSApp.activationPolicy() != desired { NSApp.setActivationPolicy(desired) }
-        if settings.showDock {
+        if settings.showDock && (iconChanged || !dockIconVisible) {
             NSApp.applicationIconImage = IconRenderer.image(battery: monitor.battery, network: monitor.network,
                 volume: monitor.audio.volume, muted: monitor.audio.muted,
                 size: 26, colorful: settings.colorful, dock: true)
         }
+        dockIconVisible = settings.showDock
         statusPanel?.refreshLayout()
     }
 
@@ -192,12 +259,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preferences.target = self
             menu.addItem(preferences)
             menu.addItem(.separator())
+            let power = NSMenuItem(title: "显示电池功耗", action: #selector(togglePowerReadout), keyEquivalent: "")
+            power.target = self; power.state = settings.showBatteryPowerInMenuBar ? .on : .off
+            menu.addItem(power)
+            let traffic = NSMenuItem(title: "显示网络上下行速率", action: #selector(toggleTrafficReadout), keyEquivalent: "")
+            traffic.target = self; traffic.state = settings.showNetworkRatesInMenuBar ? .on : .off
+            menu.addItem(traffic)
+            menu.addItem(.separator())
             let quit = NSMenuItem(title: "退出 StatusNav", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
             quit.target = NSApp
             menu.addItem(quit)
             if let button = statusItem.button { menu.popUp(positioning: nil, at: CGPoint(x: 0, y: button.bounds.height), in: button) }
         } else { toggleStatusPanel() }
     }
+
+    @objc private func togglePowerReadout() { settings.showBatteryPowerInMenuBar.toggle() }
+    @objc private func toggleTrafficReadout() { settings.showNetworkRatesInMenuBar.toggle() }
 
     private func toggleStatusPanel() {
         if statusPanel.isShown { statusPanel.close(); return }
@@ -209,7 +286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showPreferences() {
         statusPanel.close()
         if preferencesWindow == nil {
-            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 420, height: 360),
+            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 440, height: 500),
                                   styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
             window.title = "StatusNav 偏好设置"
             window.contentViewController = NSHostingController(rootView: PreferencesView(settings: settings))

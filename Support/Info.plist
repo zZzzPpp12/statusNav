@@ -10,5 +10,6 @@
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>LSUIElement</key><true/>
+    <key>NSBluetoothAlwaysUsageDescription</key><string>用于显示已配对蓝牙设备的连接状态和设备报告的电量，不会自动配对或连接设备。</string>
     <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
