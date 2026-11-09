@@ -5,12 +5,16 @@ public struct BatteryState: Equatable, Sendable {
     public var charging: Bool
     public var externalPower: Bool
     public var minutesToFull: Int?
+    public var fullyCharged: Bool
+    public var details = BatteryDetails()
 
-    public init(percentage: Int? = nil, charging: Bool = false, externalPower: Bool = false, minutesToFull: Int? = nil) {
+    public init(percentage: Int? = nil, charging: Bool = false, externalPower: Bool = false, minutesToFull: Int? = nil,
+                fullyCharged: Bool = false) {
         self.percentage = percentage.map { min(100, max(0, $0)) }
         self.charging = charging
         self.externalPower = externalPower
         self.minutesToFull = minutesToFull.flatMap { $0 > 0 ? $0 : nil }
+        self.fullyCharged = fullyCharged
     }
 
     public static func percentage(current: Int, maximum: Int) -> Int? {
@@ -24,6 +28,7 @@ public struct BatteryState: Equatable, Sendable {
         guard percentage != nil else { return "无内置电池" }
         if charging, let minutesToFull { return "正在充电 · 约 \(minutesToFull) 分钟充满" }
         if charging { return "正在充电" }
+        if externalPower && fullyCharged { return "已充满 · 已接通电源" }
         if externalPower { return "已接通电源" }
         return "使用电池供电"
     }
@@ -38,6 +43,17 @@ public struct NetworkState: Equatable, Sendable {
     public var wifiEnabled = false
     public var name: String?
     public var rssi: Int?
+    public var interfaceName: String?
+    public var ipv4Address: String?
+    public var ipv6Address: String?
+    public var transmitRate: Double?
+    public var band: String?
+    public var channel: Int?
+    public var noise: Int?
+    public var security: String?
+    public var standard: String?
+    public var isExpensive = false
+    public var isConstrained = false
     public init() {}
     public var title: String {
         switch kind {
@@ -54,6 +70,17 @@ public struct NetworkState: Equatable, Sendable {
         case .other: "globe"
         case .offline: "wifi.slash"
         }
+    }
+
+    public var signalToNoise: Int? {
+        guard let rssi, let noise, (-127..<0).contains(rssi), (-127..<0).contains(noise), rssi >= noise else { return nil }
+        return rssi - noise
+    }
+
+    /// The negotiated wireless link rate is not an Internet speed measurement.
+    public var linkRateText: String? {
+        guard let transmitRate, transmitRate.isFinite, transmitRate > 0 else { return nil }
+        return String(format: "%.0f Mbps", transmitRate)
     }
 }
 

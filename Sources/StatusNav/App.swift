@@ -43,11 +43,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusPanel = StatusPanelController(content: PanelView(
             monitor: monitor, audio: monitor.audio,
             openSettings: { [weak self] in self?.showPreferences() },
-            quit: { NSApp.terminate(nil) }
-        ))
+            quit: { NSApp.terminate(nil) },
+            expandedDetails: CommandLine.arguments.contains("--preview-details")
+        ), automaticDismissal: !CommandLine.arguments.contains("--smoke-test"),
+           maximumViewportHeight: CommandLine.arguments.contains("--smoke-test")
+               && CommandLine.arguments.contains("--preview-short") ? 400 : nil)
         Publishers.MergeMany([
             monitor.objectWillChange.eraseToAnyPublisher(),
             monitor.audio.objectWillChange.eraseToAnyPublisher(),
+            monitor.inputAudio.objectWillChange.eraseToAnyPublisher(),
             settings.objectWillChange.eraseToAnyPublisher()
         ])
         .debounce(for: .milliseconds(40), scheduler: RunLoop.main)
@@ -59,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusPanel.show(relativeTo: button)
         }
         if CommandLine.arguments.contains("--smoke-test") {
-            print("StatusNav ready: battery=\(monitor.battery.percentage != nil), audioOutputs=\(monitor.audio.devices.count), statusIcon=\(statusItem.button?.image != nil)")
+            print("StatusNav ready: battery=\(monitor.battery.percentage != nil), audioOutputs=\(monitor.audio.devices.count), audioInputs=\(monitor.inputAudio.devices.count), statusIcon=\(statusItem.button?.image != nil)")
             if let button = statusItem.button { statusPanel.show(relativeTo: button) }
             Task { @MainActor [weak self] in await self?.runSmokeTest() }
         }
@@ -69,7 +73,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         try? await Task.sleep(for: .seconds(2))
         statusPanel.refreshLayout()
         await waitForPanelLayout { self.statusPanel.documentFits }
+        precondition(statusPanel.isShown, "The panel must remain visible during the layout check")
         print("Panel layout: \(statusPanel.layoutDescription)")
+        if CommandLine.arguments.contains("--preview-short") {
+            precondition(statusPanel.frame.height <= 400, "The short viewport must stay bounded")
+            precondition(statusPanel.contentHeight > statusPanel.frame.height, "Long content must be scrollable")
+        }
         let initialHeight = statusPanel.contentHeight
         let initialFrame = statusPanel.frame
 
@@ -117,18 +126,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
-                let view = NSHostingView(rootView: PanelView(monitor: monitor, audio: monitor.audio,
-                    openSettings: {}, quit: {}).environment(\.colorScheme, scheme))
-                view.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
-                view.setFrameSize(view.fittingSize)
-                view.layoutSubtreeIfNeeded()
-                guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
-                view.cacheDisplay(in: view.bounds, to: bitmap)
-                if let png = bitmap.representation(using: .png, properties: [:]) {
-                    try png.write(to: directory.appendingPathComponent("panel-content-\(name).png"))
+                for (layout, expanded) in [("summary", false), ("details", true)] {
+                    for (surface, background) in [("content", Color.clear),
+                        ("layout", scheme == .dark ? Color(white: 0.13) : Color(white: 0.98))] {
+                        let view = NSHostingView(rootView: PanelView(monitor: monitor, audio: monitor.audio,
+                            openSettings: {}, quit: {}, expandedDetails: expanded)
+                            .environment(\.colorScheme, scheme).background(background))
+                        view.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                        view.setFrameSize(view.fittingSize)
+                        view.layoutSubtreeIfNeeded()
+                        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
+                        view.cacheDisplay(in: view.bounds, to: bitmap)
+                        if let png = bitmap.representation(using: .png, properties: [:]) {
+                            try png.write(to: directory.appendingPathComponent("panel-\(surface)-\(layout)-\(name).png"))
+                        }
+                    }
                 }
             }
-            print("Content-only previews exported to \(directory.path); these exclude the live window backdrop")
+            print("Previews exported to \(directory.path); content is transparent, layout adds a QA canvas, neither captures live glass")
         } catch {
             fputs("Preview export failed: \(error.localizedDescription)\n", stderr)
         }

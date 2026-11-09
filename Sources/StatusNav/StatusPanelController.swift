@@ -16,6 +16,8 @@ final class StatusPanelController {
     private var hostingView: NSView { hostingController.view }
     private let scrollView = NSScrollView()
     private let surfaceView: PanelSurfaceView
+    private let automaticDismissal: Bool
+    private let maximumViewportHeight: CGFloat?
     private weak var anchorButton: NSButton?
     private var localMonitor: Any?
     private var globalMonitor: Any?
@@ -25,7 +27,9 @@ final class StatusPanelController {
 
     var isShown: Bool { panel.isVisible }
 
-    init(content: PanelView) {
+    init(content: PanelView, automaticDismissal: Bool = true, maximumViewportHeight: CGFloat? = nil) {
+        self.automaticDismissal = automaticDismissal
+        self.maximumViewportHeight = maximumViewportHeight
         hostingController = NSHostingController(rootView: content)
         hostingController.sizingOptions = [.intrinsicContentSize]
         surfaceView = PanelSurfaceView(viewport: scrollView)
@@ -81,7 +85,7 @@ final class StatusPanelController {
         let top = hostingView.isFlipped ? 0 : max(0, hostingView.frame.height - scrollView.contentSize.height)
         scrollView.contentView.scroll(to: CGPoint(x: 0, y: top))
         scrollView.reflectScrolledClipView(scrollView.contentView)
-        installEventMonitors()
+        if automaticDismissal { installEventMonitors() }
     }
 
     func close() {
@@ -106,7 +110,9 @@ final class StatusPanelController {
         hostingView.layoutSubtreeIfNeeded()
         let ideal = idealContentSize
         let contentSize = CGSize(width: ceil(ideal.width), height: ceil(ideal.height))
-        let frame = PanelPlacement.frame(anchor: anchor, contentSize: contentSize, visibleFrame: visibleFrame)
+        var viewportSize = contentSize
+        if let maximumViewportHeight { viewportSize.height = min(viewportSize.height, max(1, maximumViewportHeight)) }
+        let frame = PanelPlacement.frame(anchor: anchor, contentSize: viewportSize, visibleFrame: visibleFrame)
         panel.setFrame(frame, display: true)
         surfaceView.needsLayout = true
         surfaceView.layoutSubtreeIfNeeded()
@@ -117,7 +123,7 @@ final class StatusPanelController {
 
     var layoutDescription: String {
         let ideal = idealContentSize
-        return "window=\(Int(panel.frame.width))x\(Int(panel.frame.height)), content=\(Int(ideal.width))x\(Int(ideal.height)), document=\(hostingView.frame.size), scrollable=\(hostingView.frame.height > scrollView.contentSize.height + 1), transparentWindow=\(!panel.isOpaque), reduceTransparency=\(NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency), backdrop=\(surfaceView.materialDescription), \(surfaceView.layoutDescription)"
+        return "visible=\(isShown), window=\(Int(panel.frame.width))x\(Int(panel.frame.height)), content=\(Int(ideal.width))x\(Int(ideal.height)), document=\(hostingView.frame.size), scrollable=\(hostingView.frame.height > scrollView.contentSize.height + 1), transparentWindow=\(!panel.isOpaque), reduceTransparency=\(NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency), backdrop=\(surfaceView.materialDescription), \(surfaceView.layoutDescription)"
     }
 
     var documentFits: Bool {

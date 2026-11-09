@@ -8,4 +8,6 @@ SwiftUI 的内容高度可能晚于 ObservableObject 的通知更新。PanelView
 
 运行 `StatusNav --smoke-test` 检查实际文档、视口和窗口尺寸，以及长提示出现、消失时的高度和顶部锚点。自检等待正常布局通知收敛，超时失败；不会在等待过程中反复强制刷新来掩盖丢失的布局通知。
 
-`--preview-directory` 导出的是透明的 SwiftUI 内容图，包含文字和控件，不包含 WindowServer 合成的背景模糊。它只能用于检查排版，不能据此判断屏幕上的玻璃透明程度。
+`--preview-directory` 导出深浅色的概览和详情：`panel-content-*` 为透明内容图，`panel-layout-*` 加入仅供排版检查的底色。两者都不包含 WindowServer 合成的背景模糊，不能据此判断屏幕上的玻璃透明程度。
+
+`--smoke-test --preview-details --preview-short` 将全部详情放入 400 点视口，检查长内容保持完整并通过滚动显示。自检模式忽略外部点击收起事件，避免其他窗口的活动中断尺寸验证；正常启动保留自动收起。
