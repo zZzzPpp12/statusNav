@@ -4,10 +4,12 @@ import StatusNavCore
 
 @MainActor
 struct PanelView: View {
+    static let width: CGFloat = 304
     @ObservedObject var monitor: SystemMonitor
     @ObservedObject var audio: AudioController
     let openSettings: () -> Void
     let quit: () -> Void
+    var contentSizeDidChange: (@MainActor @Sendable (CGSize) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -54,8 +56,16 @@ struct PanelView: View {
         }
         .font(.system(size: 13))
         .padding(16)
-        .frame(width: 304)
+        .frame(width: Self.width)
         .fixedSize(horizontal: false, vertical: true)
+        .background {
+            GeometryReader { geometry in
+                Color.clear.preference(key: PanelContentSizeKey.self, value: geometry.size)
+            }
+        }
+        .onPreferenceChange(PanelContentSizeKey.self) { size in
+            Task { @MainActor in contentSizeDidChange?(size) }
+        }
     }
 
     private var batterySection: some View {
@@ -176,6 +186,11 @@ struct PanelView: View {
             }
         }
     }
+}
+
+private struct PanelContentSizeKey: PreferenceKey {
+    static let defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
 }
 
 @MainActor

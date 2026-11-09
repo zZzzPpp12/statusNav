@@ -61,34 +61,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--smoke-test") {
             print("StatusNav ready: battery=\(monitor.battery.percentage != nil), audioOutputs=\(monitor.audio.devices.count), statusIcon=\(statusItem.button?.image != nil)")
             if let button = statusItem.button { statusPanel.show(relativeTo: button) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-                guard let self else { NSApp.terminate(nil); return }
-                self.statusPanel.refreshLayout()
-                print("Panel layout: \(self.statusPanel.layoutDescription)")
-                precondition(self.statusPanel.documentFits, "Panel document must retain its full content size")
-                let initialHeight = self.statusPanel.contentHeight
-                self.monitor.audio.error = String(repeating: "设备状态暂时不可用，请稍后重试。", count: 5)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    self.statusPanel.refreshLayout()
-                    precondition(self.statusPanel.documentFits, "Expanded error text must not be clipped")
-                    precondition(self.statusPanel.contentHeight > initialHeight, "Panel must grow with error text")
-                    print("Expanded panel: \(self.statusPanel.layoutDescription)")
-                    self.monitor.audio.error = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        self.statusPanel.refreshLayout()
-                        precondition(self.statusPanel.documentFits)
-                        self.statusPanel.close()
-                        precondition(!self.statusPanel.isShown)
-                        if let button = self.statusItem.button { self.statusPanel.show(relativeTo: button) }
-                        precondition(self.statusPanel.isShown)
-                        if let index = CommandLine.arguments.firstIndex(of: "--preview-directory"),
-                           CommandLine.arguments.indices.contains(index + 1) {
-                            self.exportPreviews(to: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true))
-                        }
-                        NSApp.terminate(nil)
-                    }
-                }
-            }
+            Task { @MainActor [weak self] in await self?.runSmokeTest() }
+        }
+    }
+
+    private func runSmokeTest() async {
+        try? await Task.sleep(for: .seconds(2))
+        statusPanel.refreshLayout()
+        await waitForPanelLayout { self.statusPanel.documentFits }
+        print("Panel layout: \(statusPanel.layoutDescription)")
+        let initialHeight = statusPanel.contentHeight
+        let initialFrame = statusPanel.frame
+
+        monitor.audio.error = String(repeating: "设备状态暂时不可用，请稍后重试。", count: 5)
+        await waitForPanelLayout {
+            self.statusPanel.contentHeight > initialHeight && self.statusPanel.documentFits
+        }
+        print("Expanded panel: \(statusPanel.layoutDescription)")
+        precondition(abs(statusPanel.frame.maxY - initialFrame.maxY) < 1,
+                     "Growing content must preserve the menu-bar anchor")
+
+        monitor.audio.error = nil
+        await waitForPanelLayout {
+            abs(self.statusPanel.contentHeight - initialHeight) < 1 && self.statusPanel.documentFits
+        }
+        precondition(abs(statusPanel.frame.maxY - initialFrame.maxY) < 1,
+                     "Shrinking content must preserve the menu-bar anchor")
+        statusPanel.close()
+        precondition(!statusPanel.isShown)
+        if let button = statusItem.button { statusPanel.show(relativeTo: button) }
+        precondition(statusPanel.isShown)
+        if let index = CommandLine.arguments.firstIndex(of: "--preview-directory"),
+           CommandLine.arguments.indices.contains(index + 1) {
+            exportPreviews(to: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true))
+        }
+        print("Panel smoke test passed")
+        NSApp.terminate(nil)
+    }
+
+    private func waitForPanelLayout(_ condition: () -> Bool) async {
+        // Observe natural layout convergence instead of forcing a layout that
+        // could hide a missing resize notification in the real application.
+        for _ in 0..<40 {
+            if condition() { return }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        if !condition() {
+            let message = "Panel layout did not settle: \(statusPanel.layoutDescription)\n"
+            FileHandle.standardError.write(Data(message.utf8))
+            preconditionFailure(message)
         }
     }
 

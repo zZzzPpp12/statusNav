@@ -12,24 +12,30 @@ private final class StatusPanel: NSPanel {
 @MainActor
 final class StatusPanelController {
     private let panel: NSPanel
-    private let hostingView: NSHostingView<PanelView>
+    private let hostingController: NSHostingController<PanelView>
+    private var hostingView: NSView { hostingController.view }
     private let scrollView = NSScrollView()
+    private let surfaceView: PanelSurfaceView
     private weak var anchorButton: NSButton?
     private var localMonitor: Any?
     private var globalMonitor: Any?
     private var screenObserver: NSObjectProtocol?
+    private var layoutRefreshScheduled = false
+    private var measuredContentSize: CGSize?
 
     var isShown: Bool { panel.isVisible }
 
     init(content: PanelView) {
-        hostingView = NSHostingView(rootView: content)
-        hostingView.sizingOptions = [.intrinsicContentSize]
+        hostingController = NSHostingController(rootView: content)
+        hostingController.sizingOptions = [.intrinsicContentSize]
+        surfaceView = PanelSurfaceView(viewport: scrollView)
         panel = StatusPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.level = .popUpMenu
+        panel.isFloatingPanel = true
+        panel.level = .statusBar
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
         panel.animationBehavior = .none
@@ -44,24 +50,23 @@ final class StatusPanelController {
         scrollView.horizontalScrollElasticity = .none
         scrollView.documentView = hostingView
 
-        if #available(macOS 26.0, *) {
-            let glass = NSGlassEffectView()
-            glass.style = .clear
-            glass.tintColor = nil
-            glass.cornerRadius = 14
-            glass.contentView = scrollView
-            panel.contentView = glass
-        } else {
-            let backdrop = NSVisualEffectView()
-            backdrop.material = .popover
-            backdrop.blendingMode = .behindWindow
-            backdrop.state = .active
-            backdrop.wantsLayer = true
-            backdrop.layer?.cornerRadius = 14
-            backdrop.layer?.masksToBounds = true
-            scrollView.autoresizingMask = [.width, .height]
-            backdrop.addSubview(scrollView)
-            panel.contentView = backdrop
+        let contentOwner = NSViewController()
+        contentOwner.view = surfaceView
+        contentOwner.addChild(hostingController)
+        panel.contentViewController = contentOwner
+        hostingController.rootView.contentSizeDidChange = { [weak self] size in
+            guard let self, size.width > 0, size.height > 0 else { return }
+            if let previous = self.measuredContentSize,
+               abs(size.width - previous.width) < 0.5,
+               abs(size.height - previous.height) < 0.5 { return }
+            self.measuredContentSize = size
+            guard !self.layoutRefreshScheduled else { return }
+            self.layoutRefreshScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.layoutRefreshScheduled = false
+                self.refreshLayout()
+            }
         }
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
@@ -99,27 +104,37 @@ final class StatusPanelController {
         let screen = window.screen ?? NSScreen.main
         guard let visibleFrame = screen?.visibleFrame else { return }
         hostingView.layoutSubtreeIfNeeded()
-        let ideal = hostingView.fittingSize
+        let ideal = idealContentSize
         let contentSize = CGSize(width: ceil(ideal.width), height: ceil(ideal.height))
         let frame = PanelPlacement.frame(anchor: anchor, contentSize: contentSize, visibleFrame: visibleFrame)
         panel.setFrame(frame, display: true)
-        scrollView.frame = CGRect(origin: .zero, size: frame.size)
+        surfaceView.needsLayout = true
+        surfaceView.layoutSubtreeIfNeeded()
         // Keep the document's natural height. If the display is too short, scroll rather than crop.
         hostingView.setFrameSize(CGSize(width: frame.width, height: contentSize.height))
-        panel.contentView?.layoutSubtreeIfNeeded()
+        panel.invalidateShadow()
     }
 
     var layoutDescription: String {
-        let ideal = hostingView.fittingSize
-        return "window=\(Int(panel.frame.width))x\(Int(panel.frame.height)), content=\(Int(ideal.width))x\(Int(ideal.height)), scrollable=\(hostingView.frame.height > scrollView.contentSize.height + 1), transparentWindow=\(!panel.isOpaque), reduceTransparency=\(NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency), backdrop=\(String(describing: type(of: panel.contentView!)))"
+        let ideal = idealContentSize
+        return "window=\(Int(panel.frame.width))x\(Int(panel.frame.height)), content=\(Int(ideal.width))x\(Int(ideal.height)), document=\(hostingView.frame.size), scrollable=\(hostingView.frame.height > scrollView.contentSize.height + 1), transparentWindow=\(!panel.isOpaque), reduceTransparency=\(NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency), backdrop=\(surfaceView.materialDescription), \(surfaceView.layoutDescription)"
     }
 
     var documentFits: Bool {
-        hostingView.frame.height + 1 >= hostingView.fittingSize.height
-            && hostingView.frame.width + 1 >= hostingView.fittingSize.width
+        abs(hostingView.frame.height - ceil(idealContentSize.height)) < 1
+            && abs(hostingView.frame.width - ceil(idealContentSize.width)) < 1
+            && surfaceView.viewportFits
     }
 
-    var contentHeight: CGFloat { hostingView.fittingSize.height }
+    // SwiftUI reports the laid-out document size, including padding. The initial
+    // proposal is only needed before the first geometry report arrives.
+    private var idealContentSize: CGSize {
+        measuredContentSize ?? hostingController.sizeThatFits(
+            in: CGSize(width: PanelView.width, height: .greatestFiniteMagnitude))
+    }
+
+    var contentHeight: CGFloat { idealContentSize.height }
+    var frame: CGRect { panel.frame }
 
     private func installEventMonitors() {
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }
