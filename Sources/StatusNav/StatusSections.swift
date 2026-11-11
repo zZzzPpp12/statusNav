@@ -33,12 +33,18 @@ struct PanelSectionHeader: View {
     @Binding var expanded: Bool
     let settingsPane: String
     var settingsTitle: String? = nil
+    var batteryState: BatteryState? = nil
 
     var body: some View {
         HStack(spacing: 8) {
             Button { expanded.toggle() } label: {
                 HStack(spacing: 10) {
-                    Image(systemName: symbol).font(.system(size: 17)).frame(width: 22)
+                    if let batteryState {
+                        BatteryChargeIcon(battery: batteryState)
+                            .accessibilityHidden(true)
+                    } else {
+                        Image(systemName: symbol).font(.system(size: 17)).frame(width: 22)
+                    }
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 8) {
                             Text(title).fontWeight(.semibold)
@@ -83,11 +89,9 @@ struct BatterySectionView: View {
             PanelSectionHeader(title: "电池", subtitle: subtitle,
                 symbol: battery.charging ? "battery.100percent.bolt" : "battery.75percent",
                 value: battery.percentage.map { "\($0)%" } ?? "—", expanded: $expanded,
-                settingsPane: "com.apple.preference.battery")
+                settingsPane: "com.apple.preference.battery", batteryState: battery)
+            BatteryPowerSummaryView(telemetry: monitor.telemetry, battery: battery)
             if battery.percentage != nil {
-                ProgressView(value: battery.progress)
-                    .tint(battery.isLow ? Color.orange : battery.charging ? Color.green : Color.primary)
-                    .controlSize(.small).accessibilityLabel("电池电量")
                 HStack(spacing: 8) {
                     Text(details.condition ?? "电池状态未提供")
                     Spacer(minLength: 0)
