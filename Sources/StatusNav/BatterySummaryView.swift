@@ -12,10 +12,10 @@ struct BatteryChargeIcon: View {
     var body: some View {
         HStack(spacing: 1.5) {
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 4)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .strokeBorder(.secondary.opacity(0.55), lineWidth: 1.2)
                 if battery.percentage != nil {
-                    RoundedRectangle(cornerRadius: 2)
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
                         .fill(tint)
                         .frame(width: 30 * battery.progress, height: 14)
                         .padding(.leading, 3)
@@ -31,7 +31,7 @@ struct BatteryChargeIcon: View {
                 }
             }
             .frame(width: 36, height: 20)
-            RoundedRectangle(cornerRadius: 1)
+            Capsule()
                 .fill(.secondary.opacity(0.55))
                 .frame(width: 2.5, height: 8)
         }
