@@ -19,3 +19,15 @@ public enum PanelPlacement {
         )
     }
 }
+
+public enum PowerFlowPageLayout {
+    public static let preferredHeight: CGFloat = 448
+
+    /// All three routes share this viewport; the route's content never chooses the window height.
+    public static func frame(anchor: CGRect, width: CGFloat, visibleFrame: CGRect,
+                             maximumHeight: CGFloat? = nil) -> CGRect {
+        let height = min(preferredHeight, max(1, maximumHeight ?? preferredHeight))
+        return PanelPlacement.frame(anchor: anchor, contentSize: CGSize(width: width, height: height),
+                                    visibleFrame: visibleFrame)
+    }
+}

@@ -39,7 +39,7 @@ struct PowerFlowPageView: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             HStack {
                 Button(action: navigation.close) { Label("返回", systemImage: "chevron.left") }
                     .buttonStyle(.plain).font(.system(size: 12, weight: .medium))

@@ -175,15 +175,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func checkPinnedPowerFlows() async {
-        let originalFrame = statusPanel.frame
-        let frameChanges = statusPanel.frameUpdateCount
+        let overviewFrame = statusPanel.frame
+        let originalFrameChanges = statusPanel.frameUpdateCount
+        flowNavigation.open(.charger)
+        await waitForPanelLayout { self.statusPanel.presentedPowerFlow == .charger && self.statusPanel.documentFits }
+        try? await Task.sleep(for: .milliseconds(50))
+        let compactFrame = statusPanel.frame
+        let entryChanges = statusPanel.frameUpdateCount
+        let expectedEntryChanges = compactFrame == overviewFrame ? 0 : 1
+        precondition(compactFrame.height <= PowerFlowPageLayout.preferredHeight, "Flow details must use a compact viewport")
+        precondition(compactFrame.width == overviewFrame.width && compactFrame.maxY == overviewFrame.maxY,
+                     "Entering compact details must preserve the top anchor")
+        precondition(entryChanges == originalFrameChanges + expectedEntryChanges,
+                     "Entering details may resize the window only once")
         for _ in 0..<3 {
             for kind in PowerFlowKind.allCases {
                 flowNavigation.open(kind)
                 await waitForPanelLayout { self.statusPanel.presentedPowerFlow == kind && self.statusPanel.documentFits }
                 try? await Task.sleep(for: .milliseconds(50))
-                precondition(statusPanel.frame == originalFrame, "Switching flow pages must keep the window fixed")
-                precondition(statusPanel.frameUpdateCount == frameChanges, "Flow pages must not resize the native window")
+                precondition(statusPanel.frame == compactFrame, "All flow modules must keep the same compact frame")
+                precondition(statusPanel.frameUpdateCount == entryChanges, "Switching modules must not resize the window")
                 precondition(statusPanel.isShown, "Flow navigation must not hide the window")
             }
         }
@@ -200,9 +211,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.title = originalTitle
         try? await Task.sleep(for: .milliseconds(100))
         statusPanel.refreshLayout()
-        precondition(statusPanel.frame == originalFrame, "Returning to the overview must preserve its frame")
-        precondition(statusPanel.frameUpdateCount == frameChanges, "Returning must not trigger intermediate native resizes")
-        FileHandle.standardOutput.write(Data("Pinned power flow checks passed: repeated/rapid switches and status-item width changes, zero native frame changes\n".utf8))
+        precondition(statusPanel.frame == overviewFrame, "Returning must restore the overview frame")
+        precondition(statusPanel.frameUpdateCount == originalFrameChanges + 2 * expectedEntryChanges,
+                     "Entry and return may resize once each, with no intermediate resizes")
+        let result = "Compact flow checks passed: height=\(Int(compactFrame.height)), repeated/rapid switches and status-item width changes, zero resize while switching, entry/return=\(2 * expectedEntryChanges)\n"
+        FileHandle.standardOutput.write(Data(result.utf8))
     }
 
     private func waitForPanelLayout(_ condition: () -> Bool) async {
@@ -245,7 +258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
                     let view = NSHostingView(rootView: PowerFlowPageView(
                         monitor: monitor, navigation: PowerFlowNavigation(selection: kind), animates: false)
-                        .frame(width: PanelView.width, height: 500)
+                        .frame(width: PanelView.width, height: PowerFlowPageLayout.preferredHeight)
                         .environment(\.colorScheme, scheme)
                         .background(scheme == .dark ? Color(white: 0.13) : Color(white: 0.98)))
                     view.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
@@ -346,7 +359,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleTrafficReadout() { settings.showNetworkRatesInMenuBar.toggle() }
 
     private func toggleStatusPanel() {
-        if statusPanel.isShown { statusPanel.close(); return }
+        if statusPanel.isShown {
+            if CommandLine.arguments.contains("--smoke-test") { return }
+            statusPanel.close()
+            return
+        }
         guard let button = statusItem.button else { return }
         monitor.refresh()
         statusPanel.show(relativeTo: button)

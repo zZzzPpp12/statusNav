@@ -139,6 +139,10 @@ final class StatusPanelController {
             surfaceView.layoutSubtreeIfNeeded()
             return
         }
+        layoutOverview(display: true)
+    }
+
+    private func layoutOverview(display: Bool) {
         guard let button = anchorButton, let window = button.window else { return }
         let anchor = overviewAnchor ?? window.convertToScreen(button.convert(button.bounds, to: nil))
         let screen = window.screen ?? NSScreen.main
@@ -149,19 +153,23 @@ final class StatusPanelController {
         var viewportSize = contentSize
         if let maximumViewportHeight { viewportSize.height = min(viewportSize.height, max(1, maximumViewportHeight)) }
         let frame = PanelPlacement.frame(anchor: anchor, contentSize: viewportSize, visibleFrame: visibleFrame)
-        let frameChanged = panel.frame != frame
-        if frameChanged {
-            if CommandLine.arguments.contains("--smoke-test") {
-                FileHandle.standardError.write(Data("Panel frame: \(panel.frame) -> \(frame), content=\(contentSize)\n".utf8))
-            }
-            panel.setFrame(frame, display: true)
-            frameUpdateCount += 1
-        }
+        setWindowFrame(frame)
         surfaceView.needsLayout = true
         surfaceView.layoutSubtreeIfNeeded()
         // Keep the document's natural height. If the display is too short, scroll rather than crop.
         hostingView.setFrameSize(CGSize(width: frame.width, height: contentSize.height))
-        if frameChanged { panel.invalidateShadow() }
+        if display { panel.displayIfNeeded() }
+    }
+
+    private func setWindowFrame(_ frame: CGRect) {
+        guard panel.frame != frame else { return }
+        if CommandLine.arguments.contains("--smoke-test") {
+            FileHandle.standardError.write(Data("Panel frame: \(panel.frame) -> \(frame)\n".utf8))
+        }
+        // Resize and lay out both retained surfaces before drawing, so no half-built frame is shown.
+        panel.setFrame(frame, display: false)
+        frameUpdateCount += 1
+        panel.invalidateShadow()
     }
 
     var layoutDescription: String {
@@ -197,10 +205,17 @@ final class StatusPanelController {
                 surfaceView.keepOverlayPresented()
                 return
             }
-            frozenFlowFrame = panel.frame
             overviewAnchor = stableAnchor(for: panel.frame)
+            guard let screen = panel.screen ?? anchorButton?.window?.screen ?? NSScreen.main,
+                  let overviewAnchor else { return }
+            let compact = PowerFlowPageLayout.frame(anchor: overviewAnchor, width: panel.frame.width,
+                                                    visibleFrame: screen.visibleFrame,
+                                                    maximumHeight: maximumViewportHeight)
+            frozenFlowFrame = compact
+            setWindowFrame(compact)
             surfaceView.presentOverlay(true)
             flowHostingController.view.layoutSubtreeIfNeeded()
+            panel.displayIfNeeded()
         } else {
             guard surfaceView.overlayPresented else { return }
             if !isShown {
@@ -222,10 +237,11 @@ final class StatusPanelController {
                 guard let self, self.navigationGeneration == generation,
                       !self.navigation.state.isPresented else { return }
                 self.hostingView.layoutSubtreeIfNeeded()
+                if self.isShown { self.layoutOverview(display: false) }
                 self.surfaceView.presentOverlay(false)
                 self.returningToOverview = false
                 self.frozenFlowFrame = nil
-                if self.isShown { self.refreshLayout() }
+                if self.isShown { self.panel.displayIfNeeded() }
             }
         }
     }
@@ -235,16 +251,15 @@ final class StatusPanelController {
         if let frozenFlowFrame, let button = anchorButton, let window = button.window,
            let screen = window.screen ?? NSScreen.main {
             let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
-            let frame = PanelPlacement.frame(anchor: anchor, contentSize: frozenFlowFrame.size,
-                                             visibleFrame: screen.visibleFrame)
-            if panel.frame != frame {
-                panel.setFrame(frame, display: true)
-                frameUpdateCount += 1
-            }
+            let frame = PowerFlowPageLayout.frame(anchor: anchor, width: frozenFlowFrame.width,
+                                                  visibleFrame: screen.visibleFrame,
+                                                  maximumHeight: maximumViewportHeight)
+            setWindowFrame(frame)
             self.frozenFlowFrame = frame
             overviewAnchor = stableAnchor(for: frame)
             surfaceView.needsLayout = true
             surfaceView.layoutSubtreeIfNeeded()
+            panel.displayIfNeeded()
         } else {
             overviewAnchor = nil
             refreshLayout()

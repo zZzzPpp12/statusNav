@@ -2,6 +2,28 @@ import CoreGraphics
 import Testing
 @testable import StatusNavCore
 
+@Test func powerFlowViewportIsCompactAndIndependentOfOverviewHeight() {
+    let screen = CGRect(x: 0, y: 0, width: 2560, height: 1400)
+    for overviewHeight: CGFloat in [600, 828, 1100] {
+        let overview = CGRect(x: 1000, y: 1392 - overviewHeight, width: 336, height: overviewHeight)
+        let anchor = CGRect(x: overview.midX, y: overview.maxY + 8, width: 0, height: 0)
+        let flow = PowerFlowPageLayout.frame(anchor: anchor, width: overview.width, visibleFrame: screen)
+        #expect(flow.size == CGSize(width: 336, height: 448))
+        #expect(flow.maxY == overview.maxY)
+        #expect(flow.minX == overview.minX)
+    }
+}
+
+@Test func powerFlowViewportHonorsShortWindowAndDisplayLimits() {
+    let anchor = CGRect(x: 500, y: 800, width: 0, height: 0)
+    let screen = CGRect(x: 0, y: 0, width: 1440, height: 800)
+    #expect(PowerFlowPageLayout.frame(anchor: anchor, width: 336, visibleFrame: screen, maximumHeight: 400).height == 400)
+    let shortScreen = CGRect(x: 0, y: 0, width: 1024, height: 300)
+    let flow = PowerFlowPageLayout.frame(anchor: anchor, width: 336, visibleFrame: shortScreen)
+    #expect(flow.height == 284)
+    #expect(shortScreen.contains(flow))
+}
+
 @Test func fractionalStatusItemAnchorsProduceStableIntegralWindowOrigins() {
     let screen = CGRect(x: 0, y: 0, width: 2560, height: 1400)
     let frame = PanelPlacement.frame(anchor: CGRect(x: 1480, y: 1400, width: 31, height: 25),
