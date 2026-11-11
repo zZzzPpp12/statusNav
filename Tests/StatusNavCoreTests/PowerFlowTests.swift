@@ -1,6 +1,27 @@
 import Testing
 @testable import StatusNavCore
 
+@Test func flowNavigationSwitchesWithoutDismissalAndKeepsTheLastPageOnReturn() {
+    var navigation = PowerFlowNavigationState()
+    #expect(!navigation.isPresented)
+    for kind in PowerFlowKind.allCases {
+        navigation.open(kind)
+        #expect(navigation.isPresented)
+        #expect(navigation.currentKind == kind)
+        let samePage = navigation
+        navigation.open(kind)
+        #expect(navigation == samePage)
+    }
+    navigation.close()
+    #expect(!navigation.isPresented)
+    #expect(navigation.currentKind == .system)
+    navigation.close()
+    #expect(navigation.currentKind == .system)
+    navigation.open(.battery)
+    #expect(navigation.isPresented)
+    #expect(navigation.currentKind == .battery)
+}
+
 @Test func batteryFlowReversesWhenChargingBecomesDischarging() {
     var power = PowerSnapshot()
     power.batteryNetWatts = 12

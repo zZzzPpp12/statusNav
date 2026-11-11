@@ -31,6 +31,7 @@ enum StatusNavMain {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let monitor = SystemMonitor()
     private let settings = SettingsStore()
+    private let flowNavigation = PowerFlowNavigation()
     private var statusItem: NSStatusItem!
     private var statusPanel: StatusPanelController!
     private var preferencesWindow: NSWindow?
@@ -71,12 +72,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         statusPanel = StatusPanelController(content: PanelView(
-            monitor: monitor, audio: monitor.audio, settings: settings,
+            monitor: monitor, audio: monitor.audio, settings: settings, navigation: flowNavigation,
             openSettings: { [weak self] in self?.showPreferences() },
             quit: { NSApp.terminate(nil) },
-            expandedDetails: CommandLine.arguments.contains("--preview-details"),
-            initialPowerFlow: previewPowerFlow
-        ), automaticDismissal: !CommandLine.arguments.contains("--smoke-test"),
+            expandedDetails: CommandLine.arguments.contains("--preview-details")
+        ), flowContent: PowerFlowPageView(monitor: monitor, navigation: flowNavigation),
+           automaticDismissal: !CommandLine.arguments.contains("--smoke-test"),
            maximumViewportHeight: CommandLine.arguments.contains("--smoke-test")
                && CommandLine.arguments.contains("--preview-short") ? 400 : nil)
         statusPanel.visibilityDidChange = { [weak self] in self?.monitor.setPanelVisible($0) }
@@ -128,6 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             precondition(statusPanel.frame.height <= 400, "The short viewport must stay bounded")
             precondition(statusPanel.contentHeight > statusPanel.frame.height, "Long content must be scrollable")
         }
+        await checkPinnedPowerFlows()
         let rendersBeforeIdle = renderCount
         try? await Task.sleep(for: .milliseconds(400))
         precondition(renderCount - rendersBeforeIdle <= 3, "Paused sampling must not cause an appearance redraw loop")
@@ -153,11 +155,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         precondition(!statusPanel.isShown)
         if let button = statusItem.button { statusPanel.show(relativeTo: button) }
         precondition(statusPanel.isShown)
+        if let kind = previewPowerFlow {
+            flowNavigation.open(kind)
+            await waitForPanelLayout { self.statusPanel.presentedPowerFlow == kind && self.statusPanel.documentFits }
+        }
         if let index = CommandLine.arguments.firstIndex(of: "--preview-directory"),
            CommandLine.arguments.indices.contains(index + 1) {
             exportPreviews(to: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true))
         }
-        print("Panel smoke test passed")
+        FileHandle.standardOutput.write(Data("Panel smoke test passed\n".utf8))
         if !CommandLine.arguments.contains("--hold-after-test") { NSApp.terminate(nil) }
     }
 
@@ -166,6 +172,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let index = CommandLine.arguments.firstIndex(of: "--preview-power-flow"),
               CommandLine.arguments.indices.contains(index + 1) else { return nil }
         return PowerFlowKind(rawValue: CommandLine.arguments[index + 1])
+    }
+
+    private func checkPinnedPowerFlows() async {
+        let originalFrame = statusPanel.frame
+        let frameChanges = statusPanel.frameUpdateCount
+        for _ in 0..<3 {
+            for kind in PowerFlowKind.allCases {
+                flowNavigation.open(kind)
+                await waitForPanelLayout { self.statusPanel.presentedPowerFlow == kind && self.statusPanel.documentFits }
+                try? await Task.sleep(for: .milliseconds(50))
+                precondition(statusPanel.frame == originalFrame, "Switching flow pages must keep the window fixed")
+                precondition(statusPanel.frameUpdateCount == frameChanges, "Flow pages must not resize the native window")
+                precondition(statusPanel.isShown, "Flow navigation must not hide the window")
+            }
+        }
+        flowNavigation.open(.charger)
+        flowNavigation.close()
+        flowNavigation.open(.battery)
+        flowNavigation.open(.system)
+        await waitForPanelLayout { self.statusPanel.presentedPowerFlow == .system && self.statusPanel.documentFits }
+        let originalTitle = statusItem.button?.title ?? ""
+        statusItem.button?.title = originalTitle + "      "
+        try? await Task.sleep(for: .milliseconds(200))
+        flowNavigation.close()
+        await waitForPanelLayout { self.statusPanel.presentedPowerFlow == nil && self.statusPanel.documentFits }
+        statusItem.button?.title = originalTitle
+        try? await Task.sleep(for: .milliseconds(100))
+        statusPanel.refreshLayout()
+        precondition(statusPanel.frame == originalFrame, "Returning to the overview must preserve its frame")
+        precondition(statusPanel.frameUpdateCount == frameChanges, "Returning must not trigger intermediate native resizes")
+        FileHandle.standardOutput.write(Data("Pinned power flow checks passed: repeated/rapid switches and status-item width changes, zero native frame changes\n".utf8))
     }
 
     private func waitForPanelLayout(_ condition: () -> Bool) async {
@@ -190,6 +227,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     for (surface, background) in [("content", Color.clear),
                         ("layout", scheme == .dark ? Color(white: 0.13) : Color(white: 0.98))] {
                         let view = NSHostingView(rootView: PanelView(monitor: monitor, audio: monitor.audio, settings: settings,
+                            navigation: PowerFlowNavigation(),
                             openSettings: {}, quit: {}, expandedDetails: expanded)
                             .environment(\.colorScheme, scheme).background(background))
                         view.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
@@ -205,10 +243,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             for kind in PowerFlowKind.allCases {
                 for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
-                    let view = NSHostingView(rootView: BatteryPowerSummaryView(
-                        telemetry: monitor.telemetry, battery: monitor.battery,
-                        animationsEnabled: false, initiallySelected: kind)
-                        .frame(width: PanelView.width - 32).padding(16)
+                    let view = NSHostingView(rootView: PowerFlowPageView(
+                        monitor: monitor, navigation: PowerFlowNavigation(selection: kind), animates: false)
+                        .frame(width: PanelView.width, height: 500)
                         .environment(\.colorScheme, scheme)
                         .background(scheme == .dark ? Color(white: 0.13) : Color(white: 0.98)))
                     view.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)

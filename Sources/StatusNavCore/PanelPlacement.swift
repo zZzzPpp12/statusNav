@@ -11,8 +11,10 @@ public enum PanelPlacement {
         let maxX = max(minX, visibleFrame.maxX - margin - width)
         let maxY = max(minY, visibleFrame.maxY - margin - height)
         return CGRect(
-            x: min(max(anchor.midX - width / 2, minX), maxX),
-            y: min(max(anchor.minY - margin - height, minY), maxY),
+            // AppKit can quantize half-point screen coordinates on external displays.
+            // Compare and apply the same integral origin instead of repeatedly moving by 0.5 pt.
+            x: min(max(anchor.midX - width / 2, minX), maxX).rounded(.down),
+            y: min(max(anchor.minY - margin - height, minY), maxY).rounded(.down),
             width: width, height: height
         )
     }

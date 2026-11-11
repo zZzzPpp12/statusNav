@@ -44,35 +44,21 @@ struct BatteryPowerSummaryView: View {
     @ObservedObject var telemetry: TelemetryMonitor
     let battery: BatteryState
     let animationsEnabled: Bool
-    @State private var selected: PowerFlowKind?
-
-    init(telemetry: TelemetryMonitor, battery: BatteryState, animationsEnabled: Bool,
-         initiallySelected: PowerFlowKind? = nil) {
-        self.telemetry = telemetry
-        self.battery = battery
-        self.animationsEnabled = animationsEnabled
-        _selected = State(initialValue: initiallySelected)
-    }
+    @ObservedObject var navigation: PowerFlowNavigation
 
     private var power: PowerSnapshot { telemetry.power }
 
     var body: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 6) {
-                ForEach(PowerFlowKind.allCases) { kind in
-                    metric(PowerFlowRoute.make(kind, power: power, battery: battery))
-                }
-            }
-            if let selected {
-                PowerFlowDetailView(kind: selected, power: power, battery: battery,
-                                    animationsEnabled: animationsEnabled, close: { self.selected = nil })
+        HStack(spacing: 6) {
+            ForEach(PowerFlowKind.allCases) { kind in
+                metric(PowerFlowRoute.make(kind, power: power, battery: battery))
             }
         }
     }
 
     private func metric(_ route: PowerFlowRoute) -> some View {
         Button {
-            selected = selected == route.kind ? nil : route.kind
+            navigation.open(route.kind)
         } label: {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 3) {
@@ -87,23 +73,27 @@ struct BatteryPowerSummaryView: View {
                 HStack(spacing: 3) {
                     Text(route.statusText).lineLimit(1)
                     Spacer(minLength: 0)
-                    Image(systemName: selected == route.kind ? "chevron.up" : "chevron.down")
+                    Image(systemName: isSelected(route.kind) ? "checkmark" : "chevron.right")
                         .font(.system(size: 7, weight: .semibold))
                 }.font(.system(size: 9)).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(8)
-            .background(selected == route.kind ? route.tint.opacity(0.08) : Color.primary.opacity(0.04),
+            .background(isSelected(route.kind) ? route.tint.opacity(0.08) : Color.primary.opacity(0.04),
                         in: RoundedRectangle(cornerRadius: 9))
             .overlay {
                 RoundedRectangle(cornerRadius: 9)
-                    .strokeBorder(selected == route.kind ? route.tint.opacity(0.45) : .clear, lineWidth: 1)
+                    .strokeBorder(isSelected(route.kind) ? route.tint.opacity(0.45) : .clear, lineWidth: 1)
             }
             .contentShape(RoundedRectangle(cornerRadius: 9))
         }
         .buttonStyle(.plain)
         .help("点击查看\(route.kind.title)的输入／输出流程")
         .accessibilityLabel("\(route.kind.title)，\(route.valueText)，\(route.statusText)")
-        .accessibilityValue(selected == route.kind ? "流程已展开" : "流程已收起")
+        .accessibilityValue(isSelected(route.kind) ? "正在查看流程" : "打开流程详情")
+    }
+
+    private func isSelected(_ kind: PowerFlowKind) -> Bool {
+        navigation.state.isPresented && navigation.state.currentKind == kind
     }
 }

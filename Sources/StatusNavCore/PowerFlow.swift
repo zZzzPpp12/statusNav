@@ -12,6 +12,24 @@ public enum PowerFlowKind: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// Keep the last page content intact until the native surface has switched back.
+public struct PowerFlowNavigationState: Equatable, Sendable {
+    public private(set) var currentKind: PowerFlowKind
+    public private(set) var isPresented: Bool
+
+    public init(selection: PowerFlowKind? = nil) {
+        currentKind = selection ?? .charger
+        isPresented = selection != nil
+    }
+
+    public mutating func open(_ kind: PowerFlowKind) {
+        currentKind = kind
+        isPresented = true
+    }
+
+    public mutating func close() { isPresented = false }
+}
+
 public enum PowerFlowNode: Equatable, Sendable {
     case charger, mac, battery, system
     public var title: String {

@@ -8,15 +8,15 @@ struct PanelView: View {
     @ObservedObject var monitor: SystemMonitor
     @ObservedObject var audio: AudioController
     @ObservedObject var settings: SettingsStore
+    let navigation: PowerFlowNavigation
     let openSettings: () -> Void
     let quit: () -> Void
     var expandedDetails = false
-    var initialPowerFlow: PowerFlowKind? = nil
     var contentSizeDidChange: (@MainActor @Sendable (CGSize) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            BatterySectionView(monitor: monitor, initiallyExpanded: expandedDetails, initialPowerFlow: initialPowerFlow)
+            BatterySectionView(monitor: monitor, navigation: navigation, initiallyExpanded: expandedDetails)
             Divider()
             NetworkSectionView(monitor: monitor, showMenuRates: $settings.showNetworkRatesInMenuBar,
                                initiallyExpanded: expandedDetails)

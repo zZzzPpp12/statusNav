@@ -2,6 +2,16 @@ import CoreGraphics
 import Testing
 @testable import StatusNavCore
 
+@Test func fractionalStatusItemAnchorsProduceStableIntegralWindowOrigins() {
+    let screen = CGRect(x: 0, y: 0, width: 2560, height: 1400)
+    let frame = PanelPlacement.frame(anchor: CGRect(x: 1480, y: 1400, width: 31, height: 25),
+                                     contentSize: CGSize(width: 336, height: 828), visibleFrame: screen)
+    #expect(frame.minX == frame.minX.rounded(.down))
+    #expect(frame.minY == frame.minY.rounded(.down))
+    #expect(frame.size == CGSize(width: 336, height: 828))
+    #expect(screen.contains(frame))
+}
+
 @Test func panelStaysBelowTheMenuBarAndInsideTheRightEdge() {
     let screen = CGRect(x: 0, y: 0, width: 1440, height: 875)
     let frame = PanelPlacement.frame(anchor: CGRect(x: 1410, y: 875, width: 30, height: 25),
