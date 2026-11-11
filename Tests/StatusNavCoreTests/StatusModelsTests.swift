@@ -22,6 +22,35 @@ import Testing
     #expect(BatteryState(percentage: 70, charging: true, minutesToFull: 30).summary.contains("30"))
 }
 
+@Test func chargeIndicatorDistinguishesChargingFullAndPausedPower() {
+    var battery = BatteryState(percentage: 99, externalPower: true)
+    #expect(battery.chargeState == .idle)
+    battery.fullyCharged = true
+    #expect(battery.chargeState == .full)
+    #expect(battery.chargeState.symbol == "checkmark")
+    battery.charging = true
+    #expect(battery.chargeState == .charging)
+    #expect(battery.chargeState.symbol == "bolt.fill")
+    battery.charging = false
+    battery.fullyCharged = false
+    battery.percentage = 100
+    #expect(battery.chargeState == .full)
+    #expect(battery.summary == "已充满 · 已接通电源")
+    battery.externalPower = false
+    #expect(battery.chargeState == .full)
+    #expect(battery.summary == "使用电池供电")
+    battery.externalPower = true
+    battery.percentage = 80
+    #expect(battery.chargeState == .idle)
+    #expect(battery.chargeState.symbol == nil)
+    #expect(battery.summary == "已接通电源")
+    battery.percentage = nil
+    battery.fullyCharged = true
+    battery.charging = true
+    #expect(battery.chargeState == .unavailable)
+    #expect(battery.chargeState.symbol == nil)
+}
+
 @Test func volumeDotsHandleMuteBoundariesAndNonfiniteValues() {
     #expect(VolumeScale.activeDots(volume: 1, muted: true) == 0)
     #expect(VolumeScale.activeDots(volume: 0, muted: false) == 0)

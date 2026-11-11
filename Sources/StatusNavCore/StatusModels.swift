@@ -1,5 +1,17 @@
 import Foundation
 
+public enum BatteryChargeState: Equatable, Sendable {
+    case unavailable, idle, charging, full
+
+    public var symbol: String? {
+        switch self {
+        case .charging: "bolt.fill"
+        case .full: "checkmark"
+        case .unavailable, .idle: nil
+        }
+    }
+}
+
 public struct BatteryState: Equatable, Sendable {
     public var percentage: Int?
     public var charging: Bool
@@ -24,11 +36,18 @@ public struct BatteryState: Equatable, Sendable {
 
     public var progress: Double { Double(percentage ?? 0) / 100 }
     public var isLow: Bool { percentage.map { $0 <= 20 && !externalPower } ?? false }
+    public var chargeState: BatteryChargeState {
+        guard let percentage else { return .unavailable }
+        // An active charge takes precedence over a stale fully-charged reading.
+        if charging { return .charging }
+        if fullyCharged || percentage == 100 { return .full }
+        return .idle
+    }
     public var summary: String {
         guard percentage != nil else { return "无内置电池" }
         if charging, let minutesToFull { return "正在充电 · 约 \(minutesToFull) 分钟充满" }
         if charging { return "正在充电" }
-        if externalPower && fullyCharged { return "已充满 · 已接通电源" }
+        if externalPower && chargeState == .full { return "已充满 · 已接通电源" }
         if externalPower { return "已接通电源" }
         return "使用电池供电"
     }

@@ -6,7 +6,8 @@ struct BatteryChargeIcon: View {
     let battery: BatteryState
 
     private var tint: Color {
-        battery.isLow ? .orange : battery.charging ? .green : .primary
+        battery.isLow ? .orange
+            : battery.chargeState == .charging || battery.chargeState == .full ? .green : .primary
     }
 
     var body: some View {
@@ -20,8 +21,8 @@ struct BatteryChargeIcon: View {
                         .frame(width: 30 * battery.progress, height: 14)
                         .padding(.leading, 3)
                 }
-                if battery.charging {
-                    Image(systemName: "bolt.fill")
+                if let symbol = battery.chargeState.symbol {
+                    Image(systemName: symbol)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(battery.progress > 0.55 ? Color.white : Color.primary)
                         .frame(maxWidth: .infinity)

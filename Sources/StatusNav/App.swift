@@ -43,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private struct IconState: Equatable {
         let percentage: Int?
-        let charging: Bool
+        let chargeState: BatteryChargeState
         let low: Bool
         let networkSymbol: String
         let volumeDots: Int
@@ -296,7 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         renderCount += 1
         monitor.configure(settings: settings)
         guard let button = statusItem?.button else { return }
-        let iconState = IconState(percentage: monitor.battery.percentage, charging: monitor.battery.charging,
+        let iconState = IconState(percentage: monitor.battery.percentage, chargeState: monitor.battery.chargeState,
             low: monitor.battery.isLow, networkSymbol: monitor.network.symbol,
             volumeDots: VolumeScale.activeDots(volume: monitor.audio.volume, muted: monitor.audio.muted),
             size: settings.iconSize, colorful: settings.colorful, appearance: appearanceMatch(button))
@@ -319,7 +319,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let readouts = MenuReadout.text(percentage: nil, showPercentage: false,
             batteryNetWatts: monitor.telemetry.power.batteryNetWatts, showPower: settings.showBatteryPowerInMenuBar,
             rates: monitor.telemetry.rates, showRates: settings.showNetworkRatesInMenuBar)
-        let description = "StatusNav · \(batteryText) · \(monitor.network.title) · \(monitor.audio.muted ? "已静音" : "音量 \(Int(monitor.audio.volume * 100))%")"
+        let description = "StatusNav · \(batteryText) · \(monitor.battery.summary) · \(monitor.network.title) · \(monitor.audio.muted ? "已静音" : "音量 \(Int(monitor.audio.volume * 100))%")"
         button.toolTip = description + readouts
         button.setAccessibilityLabel(description + readouts)
         let desired: NSApplication.ActivationPolicy = settings.showDock ? .regular : .accessory

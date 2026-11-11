@@ -17,7 +17,7 @@ enum IconRenderer {
         let center = CGPoint(x: canvas.width / 2, y: dock ? 140 : 13)
         let foreground: NSColor = dock ? .white : .labelColor
         let tint: NSColor = !colorful ? foreground : battery.isLow ? .systemOrange
-            : battery.charging ? .systemGreen : foreground
+            : battery.chargeState == .charging || battery.chargeState == .full ? .systemGreen : foreground
         let radius = 10 * scale
         let track = NSBezierPath()
         track.lineWidth = 2.1 * scale
@@ -35,7 +35,7 @@ enum IconRenderer {
             tint.setStroke()
             arc.stroke()
         }
-        let symbolName = battery.charging ? "bolt.fill" : network.symbol
+        let symbolName = battery.chargeState.symbol ?? network.symbol
         let symbolConfig = NSImage.SymbolConfiguration(pointSize: 10 * scale, weight: .semibold)
         if let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?.withSymbolConfiguration(symbolConfig) {
             let rect = CGRect(x: center.x - 6 * scale, y: center.y - 4.3 * scale, width: 12 * scale, height: 9 * scale)
