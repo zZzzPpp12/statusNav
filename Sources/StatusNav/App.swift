@@ -74,7 +74,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             monitor: monitor, audio: monitor.audio, settings: settings,
             openSettings: { [weak self] in self?.showPreferences() },
             quit: { NSApp.terminate(nil) },
-            expandedDetails: CommandLine.arguments.contains("--preview-details")
+            expandedDetails: CommandLine.arguments.contains("--preview-details"),
+            initialPowerFlow: previewPowerFlow
         ), automaticDismissal: !CommandLine.arguments.contains("--smoke-test"),
            maximumViewportHeight: CommandLine.arguments.contains("--smoke-test")
                && CommandLine.arguments.contains("--preview-short") ? 400 : nil)
@@ -157,7 +158,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             exportPreviews(to: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true))
         }
         print("Panel smoke test passed")
-        NSApp.terminate(nil)
+        if !CommandLine.arguments.contains("--hold-after-test") { NSApp.terminate(nil) }
+    }
+
+    private var previewPowerFlow: PowerFlowKind? {
+        guard CommandLine.arguments.contains("--smoke-test"),
+              let index = CommandLine.arguments.firstIndex(of: "--preview-power-flow"),
+              CommandLine.arguments.indices.contains(index + 1) else { return nil }
+        return PowerFlowKind(rawValue: CommandLine.arguments[index + 1])
     }
 
     private func waitForPanelLayout(_ condition: () -> Bool) async {
@@ -195,6 +203,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             }
+            for kind in PowerFlowKind.allCases {
+                for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
+                    let view = NSHostingView(rootView: BatteryPowerSummaryView(
+                        telemetry: monitor.telemetry, battery: monitor.battery,
+                        animationsEnabled: false, initiallySelected: kind)
+                        .frame(width: PanelView.width - 32).padding(16)
+                        .environment(\.colorScheme, scheme)
+                        .background(scheme == .dark ? Color(white: 0.13) : Color(white: 0.98)))
+                    view.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                    view.setFrameSize(view.fittingSize)
+                    view.layoutSubtreeIfNeeded()
+                    guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
+                    view.cacheDisplay(in: view.bounds, to: bitmap)
+                    if let png = bitmap.representation(using: .png, properties: [:]) {
+                        try png.write(to: directory.appendingPathComponent("power-flow-\(kind.rawValue)-\(name).png"))
+                    }
+                }
+            }
             print("Previews exported to \(directory.path); content is transparent, layout adds a QA canvas, neither captures live glass")
         } catch {
             fputs("Preview export failed: \(error.localizedDescription)\n", stderr)
@@ -208,6 +234,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if CommandLine.arguments.contains("--smoke-test"), let button = statusItem.button {
+            statusPanel.show(relativeTo: button)
+            return false
+        }
         toggleStatusPanel()
         return false
     }

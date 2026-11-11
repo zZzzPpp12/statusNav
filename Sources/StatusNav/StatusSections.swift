@@ -76,8 +76,10 @@ struct PanelSectionHeader: View {
 struct BatterySectionView: View {
     @ObservedObject var monitor: SystemMonitor
     @State private var expanded = false
-    init(monitor: SystemMonitor, initiallyExpanded: Bool = false) {
+    private let initialPowerFlow: PowerFlowKind?
+    init(monitor: SystemMonitor, initiallyExpanded: Bool = false, initialPowerFlow: PowerFlowKind? = nil) {
         self.monitor = monitor
+        self.initialPowerFlow = initialPowerFlow
         _expanded = State(initialValue: initiallyExpanded)
     }
 
@@ -90,7 +92,8 @@ struct BatterySectionView: View {
                 symbol: battery.charging ? "battery.100percent.bolt" : "battery.75percent",
                 value: battery.percentage.map { "\($0)%" } ?? "—", expanded: $expanded,
                 settingsPane: "com.apple.preference.battery", batteryState: battery)
-            BatteryPowerSummaryView(telemetry: monitor.telemetry, battery: battery)
+            BatteryPowerSummaryView(telemetry: monitor.telemetry, battery: battery,
+                                    animationsEnabled: monitor.panelVisible, initiallySelected: initialPowerFlow)
             if battery.percentage != nil {
                 HStack(spacing: 8) {
                     Text(details.condition ?? "电池状态未提供")

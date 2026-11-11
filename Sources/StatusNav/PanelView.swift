@@ -11,11 +11,12 @@ struct PanelView: View {
     let openSettings: () -> Void
     let quit: () -> Void
     var expandedDetails = false
+    var initialPowerFlow: PowerFlowKind? = nil
     var contentSizeDidChange: (@MainActor @Sendable (CGSize) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            BatterySectionView(monitor: monitor, initiallyExpanded: expandedDetails)
+            BatterySectionView(monitor: monitor, initiallyExpanded: expandedDetails, initialPowerFlow: initialPowerFlow)
             Divider()
             NetworkSectionView(monitor: monitor, showMenuRates: $settings.showNetworkRatesInMenuBar,
                                initiallyExpanded: expandedDetails)

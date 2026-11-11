@@ -15,7 +15,7 @@ final class SystemMonitor: ObservableObject {
     @Published private(set) var bluetoothEnabled = true
     @Published private(set) var appActivityEnabled = true
     private var started = false
-    private var panelVisible = false
+    @Published private(set) var panelVisible = false
     private var powerDetailsVisible = false
     private var menuPower = false
     private var menuRates = false

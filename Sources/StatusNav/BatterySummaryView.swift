@@ -43,62 +43,67 @@ struct BatteryChargeIcon: View {
 struct BatteryPowerSummaryView: View {
     @ObservedObject var telemetry: TelemetryMonitor
     let battery: BatteryState
+    let animationsEnabled: Bool
+    @State private var selected: PowerFlowKind?
+
+    init(telemetry: TelemetryMonitor, battery: BatteryState, animationsEnabled: Bool,
+         initiallySelected: PowerFlowKind? = nil) {
+        self.telemetry = telemetry
+        self.battery = battery
+        self.animationsEnabled = animationsEnabled
+        _selected = State(initialValue: initiallySelected)
+    }
+
     private var power: PowerSnapshot { telemetry.power }
-    private var inputDisconnected: Bool { battery.percentage != nil && !battery.externalPower }
 
     var body: some View {
-        HStack(spacing: 6) {
-            metric("充电器输入", symbol: "powerplug.fill", tint: .orange,
-                   value: inputDisconnected ? "未接入" : PowerSnapshot.wattsText(power.inputWatts),
-                   subtitle: inputDisconnected ? "电池供电" : "实时输入",
-                   help: "充电器实际输入 Mac 的功率，不是适配器标称功率；硬件未提供时显示不可用。")
-            metric("电池功率", symbol: batterySymbol, tint: batteryTint,
-                   value: PowerSnapshot.wattsText(power.batteryNetWatts.map(abs)),
-                   subtitle: batteryDirection,
-                   help: "电池净功率由电压和有符号电流估算；充入表示充电，放出表示电池正在供电。")
-            metric("系统消耗功率", symbol: "desktopcomputer", tint: .blue,
-                   value: PowerSnapshot.wattsText(power.systemWatts),
-                   subtitle: "整机消耗",
-                   help: power.systemSource + "，不等于各应用 CPU 能耗之和，也不能与分项重复相加。")
-        }
-    }
-
-    private var batteryDirection: String {
-        guard let watts = power.batteryNetWatts, watts.isFinite else { return "等待有效读数" }
-        if watts > 0.05 { return "充入电池" }
-        if watts < -0.05 { return "电池放出" }
-        return "净功率接近零"
-    }
-
-    private var batterySymbol: String {
-        guard let watts = power.batteryNetWatts else { return "battery.100percent" }
-        return watts < -0.05 ? "arrow.up.right" : watts > 0.05 ? "arrow.down.left" : "equal"
-    }
-
-    private var batteryTint: Color {
-        guard let watts = power.batteryNetWatts else { return .secondary }
-        return watts < -0.05 ? .orange : .green
-    }
-
-    private func metric(_ title: String, symbol: String, tint: Color, value: String,
-                        subtitle: String, help: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 3) {
-                Image(systemName: symbol).foregroundStyle(tint)
-                Text(title).foregroundStyle(.secondary)
+        VStack(spacing: 10) {
+            HStack(spacing: 6) {
+                ForEach(PowerFlowKind.allCases) { kind in
+                    metric(PowerFlowRoute.make(kind, power: power, battery: battery))
+                }
             }
-            .font(.system(size: 9))
-            .lineLimit(1)
-            Text(value)
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
-            Text(subtitle)
-                .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+            if let selected {
+                PowerFlowDetailView(kind: selected, power: power, battery: battery,
+                                    animationsEnabled: animationsEnabled, close: { self.selected = nil })
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
-        .background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
-        .help(help)
-        .accessibilityElement(children: .combine)
+    }
+
+    private func metric(_ route: PowerFlowRoute) -> some View {
+        Button {
+            selected = selected == route.kind ? nil : route.kind
+        } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 3) {
+                    PowerFlowGlyph(route: route, enabled: animationsEnabled)
+                    Text(route.kind.title).foregroundStyle(.secondary)
+                }
+                .font(.system(size: 9))
+                .lineLimit(1)
+                Text(route.valueText)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
+                HStack(spacing: 3) {
+                    Text(route.statusText).lineLimit(1)
+                    Spacer(minLength: 0)
+                    Image(systemName: selected == route.kind ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 7, weight: .semibold))
+                }.font(.system(size: 9)).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
+            .background(selected == route.kind ? route.tint.opacity(0.08) : Color.primary.opacity(0.04),
+                        in: RoundedRectangle(cornerRadius: 9))
+            .overlay {
+                RoundedRectangle(cornerRadius: 9)
+                    .strokeBorder(selected == route.kind ? route.tint.opacity(0.45) : .clear, lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 9))
+        }
+        .buttonStyle(.plain)
+        .help("点击查看\(route.kind.title)的输入／输出流程")
+        .accessibilityLabel("\(route.kind.title)，\(route.valueText)，\(route.statusText)")
+        .accessibilityValue(selected == route.kind ? "流程已展开" : "流程已收起")
     }
 }
